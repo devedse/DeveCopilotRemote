@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e1729" />
+  <title>DeveCopilotRemote</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar__identity">
+        <div class="brand__logo">MC</div>
+        <div>
+          <p class="eyebrow">Remote control</p>
+          <h1>Copilot Chat</h1>
+        </div>
+      </div>
+      <div class="topbar__status">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="connectionStatus" class="status-text">Connecting...</span>
+      </div>
+    </header>
+
+    <div class="workspace-shell">
+      <aside class="section-rail" aria-label="Main navigation">
+        <button class="section-rail__item is-active" data-panel="chat" type="button">
+          <span class="section-rail__icon">✦</span>
+          <span class="section-rail__text">Chat</span>
+        </button>
+        <button class="section-rail__item" data-panel="changes" type="button">
+          <span class="section-rail__icon">≋</span>
+          <span class="section-rail__text">Checked out</span>
+        </button>
+        <button class="section-rail__item" data-panel="files" type="button">
+          <span class="section-rail__icon">⌘</span>
+          <span class="section-rail__text">Files</span>
+        </button>
+      </aside>
+
+      <main class="panel-shell">
+        <section id="panel-chat" class="panel is-active panel--chat" aria-labelledby="chat-heading">
+          <header class="panel-header">
+            <div>
+              <p class="eyebrow">Session</p>
+              <h2 id="chat-heading">Chat</h2>
+            </div>
+            <div class="panel-header__meta">
+              <span class="meta-pill">Native panel</span>
+              <span class="meta-pill meta-pill--subtle">Ask, Edit, Agent</span>
+            </div>
+          </header>
+
+          <div class="transcript" id="transcript">
+            <article class="turn turn--assistant turn--intro">
+              <div class="turn__avatar">✦</div>
+              <div class="turn__body">
+                <div class="turn__header">
+                  <span class="turn__author">GitHub Copilot</span>
+                  <span class="turn__time">Ready</span>
+                </div>
+                <div class="turn__content">
+                  <p>This mobile view controls the existing VS Code chat window instead of replacing it.</p>
+                  <ul class="turn__list">
+                    <li>Compose prompts here</li>
+                    <li>Attach the active file or selection</li>
+                    <li>See submission status here — the full response stays in the VS Code chat panel</li>
+                  </ul>
+                </div>
+              </div>
+            </article>
+
+            <article class="turn turn--system">
+              <div class="turn__body turn__body--system">
+                <div class="turn__content">
+                  <p>Prompts are submitted to the real VS Code Copilot chat panel. Responses appear on the desktop — this view is a remote prompt submission tool, not a transcript.</p>
+                </div>
+              </div>
+            </article>
+
+            <div id="activityLog" class="activity-stream">
+              <div class="empty-state" id="emptyState">
+                <p class="empty-state__title">No prompts yet</p>
+                <p class="empty-state__text">Send a prompt from the composer below to start driving the chat panel.</p>
+              </div>
+            </div>
+          </div>
+
+          <form id="chatForm" class="composer" autocomplete="off">
+            <div class="composer__toolbar">
+              <label class="mode-picker">
+                <span class="mode-picker__label">Mode</span>
+                <select id="mode" class="mode-picker__select">
+                  <option value="current">Use VS Code current</option>
+                  <option value="ask">Ask</option>
+                  <option value="edit">Edit</option>
+                  <option value="agent">Agent</option>
+                </select>
+              </label>
+
+              <label class="mode-picker">
+                <span class="mode-picker__label">Model</span>
+                <select id="model" class="mode-picker__select">
+                  <option value="">Default</option>
+                </select>
+              </label>
+
+              <label class="chip-toggle">
+                <input id="attachActiveFile" type="checkbox" checked />
+                <span class="chip-toggle__label">Attach active file</span>
+              </label>
+            </div>
+
+            <label class="composer__field" for="prompt">
+              <textarea
+                id="prompt"
+                class="composer__input"
+                rows="2"
+                maxlength="12000"
+                placeholder="Message Copilot Chat..."
+                required
+              ></textarea>
+            </label>
+
+            <div class="composer__footer">
+              <span id="promptMeta" class="composer__meta">0 / 12000</span>
+              <div class="composer__actions">
+                <button id="clearButton" class="button button--ghost" type="button">Clear</button>
+                <button id="submitButton" class="button button--primary" type="submit">Send</button>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section id="panel-changes" class="panel" aria-labelledby="changes-heading" hidden>
+          <header class="panel-header">
+            <div>
+              <p class="eyebrow">Planned</p>
+              <h2 id="changes-heading">Checked out files</h2>
+            </div>
+          </header>
+
+          <div class="placeholder-view">
+            <p class="placeholder-view__title">Checked out files will land here</p>
+            <p class="placeholder-view__text">The next iteration can render git changes in a layout similar to Source Control.</p>
+          </div>
+        </section>
+
+        <section id="panel-files" class="panel" aria-labelledby="files-heading" hidden>
+          <header class="panel-header">
+            <div>
+              <p class="eyebrow">Planned</p>
+              <h2 id="files-heading">Files</h2>
+            </div>
+          </header>
+
+          <div class="placeholder-view">
+            <p class="placeholder-view__title">Files browser will land here</p>
+            <p class="placeholder-view__text">This panel is reserved for a workspace browser that feels closer to the Explorer.</p>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

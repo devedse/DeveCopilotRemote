@@ -1,0 +1,81 @@
+{
+  "name": "deve-copilot-remote",
+  "displayName": "DeveCopilotRemote",
+  "description": "VS Code extension that lets you drive the native Copilot chat panel from a mobile device.",
+  "version": "0.0.2",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "deveCopilotRemote.sendPromptToChat",
+        "title": "DeveCopilotRemote: Send Prompt To Chat"
+      },
+      {
+        "command": "deveCopilotRemote.summarizeActiveFile",
+        "title": "DeveCopilotRemote: Summarize Active File In Chat"
+      },
+      {
+        "command": "deveCopilotRemote.openWebUi",
+        "title": "DeveCopilotRemote: Open Web UI"
+      },
+      {
+        "command": "deveCopilotRemote.copyWebUiUrl",
+        "title": "DeveCopilotRemote: Copy Web UI URL"
+      }
+    ],
+    "configuration": {
+      "title": "DeveCopilotRemote",
+      "properties": {
+        "deveCopilotRemote.defaultMode": {
+          "type": "string",
+          "enum": [
+            "current",
+            "ask",
+            "edit",
+            "agent"
+          ],
+          "default": "current",
+          "description": "Default chat mode used when sending prompts to the native chat panel. Use 'current' to keep the mode already selected in VS Code."
+        },
+        "deveCopilotRemote.blockOnResponse": {
+          "type": "boolean",
+          "default": true,
+          "description": "Wait for the chat.open command to resolve when the native chat response reaches a terminal state."
+        },
+        "deveCopilotRemote.webUi.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start the local web UI server when the extension activates."
+        },
+        "deveCopilotRemote.webUi.host": {
+          "type": "string",
+          "default": "0.0.0.0",
+          "description": "Host interface for the web UI server."
+        },
+        "deveCopilotRemote.webUi.port": {
+          "type": "number",
+          "default": 3210,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Port used by the mobile web UI server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.11",
+    "@types/vscode": "^1.100.0",
+    "typescript": "^5.8.2"
+  }
+}
