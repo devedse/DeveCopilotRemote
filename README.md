@@ -1,5 +1,7 @@
 # DeveCopilotRemote
 
+![DeveCopilotRemote](p1.png)
+
 > **Shopping for clothes with your wife?** She's trying on outfit #47, you're on commit #47.
 > 
 > **At the gym between sets?** Lift, rest, bugfix, repeat.
