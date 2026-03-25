@@ -1,4 +1,4 @@
-# Deve Copilot Remote
+# DeveCopilotRemote
 
 Drive the VS Code Copilot chat panel from your phone.
 
