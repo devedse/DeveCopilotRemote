@@ -1,9 +1,13 @@
 # DeveCopilotRemote
 
 > **Shopping for clothes with your wife?** She's trying on outfit #47, you're on commit #47.
+> 
 > **At the gym between sets?** Lift, rest, bugfix, repeat.
+> 
 > **Sitting in church?** Let us deploy. Amen.
+> 
 > **Dropping a big one?** Time on the throne, code on the phone.
+> 
 > **Funeral?** Okay maybe not this one. ...Unless the WiFi's good.
 
 Drive the VS Code Copilot chat panel from your phone.
