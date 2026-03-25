@@ -1,0 +1,121 @@
+@import 'tailwindcss';
+@import 'highlight.js/styles/github-dark.min.css';
+
+/* Custom theme tokens */
+@theme {
+  --color-brand: #3794ff;
+  --color-brand-soft: rgba(55, 148, 255, 0.14);
+  --color-surface: #1e1e1e;
+  --color-surface-alt: #252526;
+  --color-surface-hover: #2a2d2e;
+  --color-border-default: #2f2f2f;
+  --color-border-strong: #3c3c3c;
+  --color-success: #73c991;
+  --color-danger: #f48771;
+}
+
+/* Base resets */
+html,
+body {
+  min-height: 100dvh;
+}
+
+#app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #3c3c3c;
+  border-radius: 3px;
+}
+
+/* Markdown content styling */
+.markdown-body {
+  line-height: 1.6;
+}
+.markdown-body p {
+  margin-bottom: 0.5em;
+}
+.markdown-body p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body pre {
+  background: #161616;
+  border: 1px solid #2f2f2f;
+  border-radius: 6px;
+  padding: 0.75rem;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+.markdown-body code {
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+  font-size: 0.85em;
+}
+.markdown-body :not(pre) > code {
+  background: #2a2d2e;
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+}
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+.markdown-body li {
+  margin: 0.2em 0;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4 {
+  color: #f3f3f3;
+  margin: 0.75em 0 0.25em;
+  font-weight: 600;
+}
+.markdown-body blockquote {
+  border-left: 3px solid #3794ff;
+  padding-left: 0.75rem;
+  margin: 0.5em 0;
+  color: #9d9d9d;
+}
+.markdown-body table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  width: 100%;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid #2f2f2f;
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+.markdown-body th {
+  background: #252526;
+  color: #f3f3f3;
+}
+
+/* Diff line styling */
+.diff-line--added {
+  color: #73c991;
+  background: rgba(115, 201, 145, 0.08);
+}
+.diff-line--removed {
+  color: #f48771;
+  background: rgba(244, 135, 113, 0.08);
+}
+.diff-line--hunk {
+  color: #3794ff;
+}
+.diff-line--meta {
+  color: #9d9d9d;
+}

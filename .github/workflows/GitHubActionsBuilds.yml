@@ -25,11 +25,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22.x'
-          cache: 'npm'
-      - name: Install dependencies
+      - name: Install extension dependencies
         run: npm ci
+      - name: Install webui dependencies
+        run: cd webui && npm ci
+      - name: Build webui
+        run: cd webui && npm run build
       - name: Compile TypeScript
-        run: npm run compile
+        run: npm run compile:ext
       - name: Set version
         run: |
           VERSION=1.0.${{needs.generate_version_number.outputs.build_number}}

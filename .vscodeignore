@@ -1,0 +1,15 @@
+# Source files (not needed in VSIX)
+src/**
+webui/**
+old/**
+
+# Config/build files
+tsconfig.json
+.github/**
+.gitignore
+.editorconfig
+
+# Dev artifacts
+node_modules/**
+**/.DS_Store
+*.map

@@ -140,3 +140,7 @@ vite.config.ts.timestamp-*
 
 # VS Code extension packaging
 *.vsix
+
+# Vite build output (served by extension, rebuilt from webui/)
+media/web/assets/
+media/web/index.html
