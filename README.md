@@ -1,16 +1,19 @@
-# DeveCopilotRemote
+# Deve Copilot Remote
 
-This is a VS Code extension for driving the existing native chat panel from a mobile device.
+Drive the VS Code Copilot chat panel from your phone.
 
-## What it does
+This extension starts a local web server so you can submit prompts, browse files, and watch live changes from any device on the same network.
 
-- asks for a prompt
-- optionally attaches the active file
-- calls `workbench.action.chat.open`
-- submits the request into the real chat panel
-- serves a responsive mobile web UI for remote prompt submission
-- browse workspace files from your phone
-- view uncommitted git changes and live edits in real time
+## Screenshots
+
+### Chat
+![Chat](Screenshot_Chat.png)
+
+### Checked-out changes
+![Checked-out changes](Screenshot_CheckedOut.png)
+
+### Files
+![Files](Screenshot_Files.png)
 
 ## Commands
 
@@ -21,20 +24,12 @@ This is a VS Code extension for driving the existing native chat panel from a mo
 
 ## Run locally
 
-1. Run `npm install` in this folder.
-2. Run `npm run compile`.
-3. Open this folder in VS Code.
-4. Press `F5` to launch the Extension Development Host.
-5. Run `DeveCopilotRemote: Open Web UI` or `DeveCopilotRemote: Copy Web UI URL`.
-6. Open the copied URL on your phone if both devices are on the same network.
+1. `npm install`
+2. `npm run compile`
+3. Open in VS Code and press **F5**.
+4. Run `DeveCopilotRemote: Copy Web UI URL` and open the URL on your phone.
 
-## Notes
+## Limitations
 
-This extension targets the existing native chat surface. It submits prompts into the panel. Responses are only available in the VS Code desktop chat panel — there is no API to read the actual Copilot response from an extension.
-
-The web UI has three tabs:
-
-- **Chat** — compose and submit prompts to the VS Code Copilot chat panel
-- **Changes** — shows uncommitted git changes plus a live stream of file edits as they happen
-- **Files** — browse the workspace directory tree and view file contents
+Copilot does not expose an API to stream the full agent response back to extensions. Because of this, the web UI can only stream back the file changes Copilot makes — the actual chat response text is only visible in the desktop VS Code chat panel.
 
