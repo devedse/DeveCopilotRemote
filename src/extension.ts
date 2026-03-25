@@ -842,8 +842,9 @@ function parseChatHistory(text: string): Array<{ role: 'user' | 'assistant'; con
       continue;
     }
 
-    // Inline format: "User: ..." starts a user message
-    if (/^User:\s*/i.test(trimmed)) {
+    // "User: ..." starts a user message — but ONLY when not already in a user message
+    // (otherwise "User:" in content would incorrectly split the message)
+    if (/^User:\s*/i.test(trimmed) && currentRole !== 'user') {
       pushCurrent();
       currentRole = 'user';
       const after = trimmed.replace(/^User:\s*/i, '');
@@ -853,8 +854,9 @@ function parseChatHistory(text: string): Array<{ role: 'user' | 'assistant'; con
       continue;
     }
 
-    // Inline format: "GitHub Copilot: ..." or "Copilot: ..." or "Assistant: ..." starts an assistant message
-    if (/^(GitHub Copilot|Copilot|Assistant):\s*/i.test(trimmed)) {
+    // "GitHub Copilot: ..." or "Copilot: ..." starts an assistant message
+    // Only when not already in an assistant message (same guard)
+    if (/^(GitHub Copilot|Copilot):\s*/i.test(trimmed) && currentRole !== 'assistant') {
       pushCurrent();
       currentRole = 'assistant';
       const after = trimmed.replace(/^(GitHub Copilot|Copilot|Assistant):\s*/i, '');
