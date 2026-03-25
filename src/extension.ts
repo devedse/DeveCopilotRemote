@@ -842,11 +842,22 @@ function parseChatHistory(text: string): Array<{ role: 'user' | 'assistant'; con
       continue;
     }
 
-    // Inline format: "GitHub Copilot: ..." starts an assistant message
-    if (/^GitHub Copilot:\s*/i.test(trimmed)) {
+    // Inline format: "User: ..." starts a user message
+    if (/^User:\s*/i.test(trimmed)) {
+      pushCurrent();
+      currentRole = 'user';
+      const after = trimmed.replace(/^User:\s*/i, '');
+      if (after) {
+        currentContent = [after];
+      }
+      continue;
+    }
+
+    // Inline format: "GitHub Copilot: ..." or "Copilot: ..." or "Assistant: ..." starts an assistant message
+    if (/^(GitHub Copilot|Copilot|Assistant):\s*/i.test(trimmed)) {
       pushCurrent();
       currentRole = 'assistant';
-      const after = trimmed.replace(/^GitHub Copilot:\s*/i, '');
+      const after = trimmed.replace(/^(GitHub Copilot|Copilot|Assistant):\s*/i, '');
       if (after) {
         currentContent = [after];
       }
