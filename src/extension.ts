@@ -47,6 +47,8 @@ type ChangeListener = (change: FileChange) => void;
 
 type StreamEvent =
   | { type: 'status'; stage: 'submitted' | 'awaiting-response' | 'response-complete'; message: string }
+  | { type: 'response'; text: string; model?: string; details?: string }
+  | { type: 'confirmation'; toolId: string; message: string }
   | { type: 'change'; file: FileChange }
   | { type: 'error'; message: string }
   | { type: 'done'; note?: string };
@@ -554,12 +556,15 @@ async function handleHttpRequest(
 
     const options = await buildChatOptions(prompt, Boolean(body.attachActiveFile), body.mode, body.model);
     const result = await openNativeChat(output, options);
+    const extracted = extractChatResponse(result);
 
     writeJson(res, 200, {
       ok: true,
       submitted: true,
       result: normalizeResult(result),
-      note: 'The response is rendered in the native VS Code chat panel.'
+      response: extracted.text || null,
+      model: extracted.model || null,
+      note: extracted.text ? undefined : 'The response is rendered in the native VS Code chat panel.'
     });
     return;
   }
@@ -1219,20 +1224,54 @@ async function handleStreamingChatRequest(
       });
     }
 
-    await openNativeChat(output, nativeOptions);
+    const chatResult = await openNativeChat(output, nativeOptions);
 
-    writeStreamEvent(res, {
-      type: 'status',
-      stage: 'response-complete',
-      message: blockOnResponse
-        ? 'Copilot has finished responding. Check the VS Code chat panel for the full answer.'
-        : 'Prompt sent. Check the VS Code chat panel for the response.'
-    });
+    // Check if Copilot returned a tool confirmation instead of a response
+    const confirmation = extractConfirmation(chatResult);
+    if (confirmation) {
+      writeStreamEvent(res, {
+        type: 'confirmation',
+        toolId: confirmation.toolId,
+        message: `Copilot wants to use "${confirmation.toolId}" — please confirm on the desktop VS Code.`
+      });
 
-    writeStreamEvent(res, {
-      type: 'done',
-      note: 'The response is in the native VS Code chat panel on the desktop.'
-    });
+      writeStreamEvent(res, {
+        type: 'status',
+        stage: 'response-complete',
+        message: 'Awaiting confirmation on desktop.'
+      });
+
+      writeStreamEvent(res, {
+        type: 'done',
+        note: 'A tool confirmation is pending in VS Code on the desktop.'
+      });
+    } else {
+      // Extract the response text from the chat result when available
+      const extracted = extractChatResponse(chatResult);
+      if (extracted.text) {
+        writeStreamEvent(res, {
+          type: 'response',
+          text: extracted.text,
+          model: extracted.model,
+          details: extracted.details
+        });
+      }
+
+      writeStreamEvent(res, {
+        type: 'status',
+        stage: 'response-complete',
+        message: extracted.text
+          ? 'Response received.'
+          : blockOnResponse
+            ? 'Copilot has finished responding. Check the VS Code chat panel for the full answer.'
+            : 'Prompt sent. Check the VS Code chat panel for the response.'
+      });
+
+      writeStreamEvent(res, {
+        type: 'done',
+        note: extracted.text ? undefined : 'The response is in the native VS Code chat panel on the desktop.'
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(`Chat request failed: ${message}`);
@@ -1248,5 +1287,54 @@ async function handleStreamingChatRequest(
 
 function writeStreamEvent(res: http.ServerResponse, event: StreamEvent): void {
   res.write(`${JSON.stringify(event)}\n`);
+}
+
+function extractConfirmation(result: unknown): { toolId: string } | null {
+  if (!result || typeof result !== 'object') {
+    return null;
+  }
+
+  const obj = result as Record<string, unknown>;
+  if (obj.type === 'confirmation' && typeof obj.toolId === 'string') {
+    return { toolId: obj.toolId };
+  }
+
+  return null;
+}
+
+function extractChatResponse(result: unknown): { text: string; model?: string; details?: string } {
+  const empty = { text: '' };
+  if (!result || typeof result !== 'object') {
+    return empty;
+  }
+
+  const obj = result as Record<string, unknown>;
+  const metadata = obj.metadata as Record<string, unknown> | undefined;
+  if (!metadata) {
+    return empty;
+  }
+
+  const rounds = metadata.toolCallRounds as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(rounds) || rounds.length === 0) {
+    return empty;
+  }
+
+  // Concatenate response text from all rounds
+  const parts: string[] = [];
+  for (const round of rounds) {
+    if (typeof round.response === 'string' && round.response.trim()) {
+      parts.push(round.response.trim());
+    }
+  }
+
+  if (parts.length === 0) {
+    return empty;
+  }
+
+  return {
+    text: parts.join('\n\n'),
+    model: typeof metadata.resolvedModel === 'string' ? metadata.resolvedModel : undefined,
+    details: typeof obj.details === 'string' ? obj.details : undefined
+  };
 }
 

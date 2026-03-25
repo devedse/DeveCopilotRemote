@@ -310,6 +310,8 @@ textarea {
 
 .turn__content p {
   margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .turn__content p + p {
@@ -327,6 +329,14 @@ textarea {
 
 .turn--error .turn__status {
   color: #ffb9ab;
+}
+
+.turn--confirmation .turn__avatar {
+  background: linear-gradient(135deg, #b5890a, #e8a317);
+}
+
+.turn--confirmation .turn__status {
+  color: #f0d080;
 }
 
 .turn__list {

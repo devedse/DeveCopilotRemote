@@ -31,5 +31,5 @@ This extension starts a local web server so you can submit prompts, browse files
 
 ## Limitations
 
-Copilot does not expose an API to stream the full agent response back to extensions. Because of this, the web UI can only stream back the file changes Copilot makes — the actual chat response text is only visible in the desktop VS Code chat panel.
+When Copilot requests a tool confirmation (e.g. running a terminal command), the response cannot be extracted — you will need to approve it on the desktop VS Code chat panel. Simple ask-mode responses are relayed directly to the mobile web UI.
 

@@ -319,6 +319,16 @@ function handleStreamEvent(event, assistantTurn) {
     if (event.stage === 'response-complete') {
       assistantTurn.timeNode.textContent = 'Done';
     }
+  } else if (event.type === 'response') {
+    // Render the actual Copilot response text
+    assistantTurn.textNode.textContent = event.text;
+    if (event.model) {
+      assistantTurn.statusNode.textContent = event.model;
+    }
+  } else if (event.type === 'confirmation') {
+    // Copilot needs a tool confirmation on the desktop
+    assistantTurn.textNode.textContent = event.message;
+    assistantTurn.root.classList.add('turn--confirmation');
   } else if (event.type === 'change') {
     renderSingleChange(event.file, assistantTurn.changesNode);
   } else if (event.type === 'error') {
