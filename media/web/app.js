@@ -427,7 +427,6 @@ function renderSingleChange(file, container) {
 
     lineEl.textContent = line;
     diffBlock.appendChild(lineEl);
-    diffBlock.appendChild(document.createTextNode('\n'));
   }
 
   fileBlock.appendChild(diffBlock);
@@ -618,7 +617,6 @@ async function openChangeDiff(filePath, status) {
 
       lineEl.textContent = line;
       changesDiffContent.appendChild(lineEl);
-      changesDiffContent.appendChild(document.createTextNode('\n'));
     }
   } catch {
     changesDiffContent.textContent = 'Could not load diff.';

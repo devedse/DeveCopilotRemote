@@ -759,10 +759,13 @@ textarea {
 }
 
 .change-row__status {
-  flex-shrink: 0;
+  flex-shrink: 1;
   font-size: 0.72rem;
   color: var(--text-muted);
   text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Diff viewer in changes panel ── */
