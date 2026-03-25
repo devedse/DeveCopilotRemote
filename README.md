@@ -9,6 +9,8 @@ This is a VS Code extension for driving the existing native chat panel from a mo
 - calls `workbench.action.chat.open`
 - submits the request into the real chat panel
 - serves a responsive mobile web UI for remote prompt submission
+- browse workspace files from your phone
+- view uncommitted git changes and live edits in real time
 
 ## Commands
 
@@ -30,5 +32,9 @@ This is a VS Code extension for driving the existing native chat panel from a mo
 
 This extension targets the existing native chat surface. It submits prompts into the panel. Responses are only available in the VS Code desktop chat panel — there is no API to read the actual Copilot response from an extension.
 
-The web UI currently implements only the Chat tab. Files and Checked out files are present as placeholders for later work.
+The web UI has three tabs:
+
+- **Chat** — compose and submit prompts to the VS Code Copilot chat panel
+- **Changes** — shows uncommitted git changes plus a live stream of file edits as they happen
+- **Files** — browse the workspace directory tree and view file contents
 

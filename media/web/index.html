@@ -133,31 +133,64 @@
           </form>
         </section>
 
-        <section id="panel-changes" class="panel" aria-labelledby="changes-heading" hidden>
+        <section id="panel-changes" class="panel panel--changes" aria-labelledby="changes-heading" hidden>
           <header class="panel-header">
             <div>
-              <p class="eyebrow">Planned</p>
-              <h2 id="changes-heading">Checked out files</h2>
+              <p class="eyebrow">Source control</p>
+              <h2 id="changes-heading">Changes</h2>
+            </div>
+            <div class="panel-header__meta">
+              <span class="meta-pill meta-pill--subtle" id="changesBranch"></span>
+              <button id="changesRefreshBtn" class="button button--ghost button--small" type="button" title="Refresh">↻</button>
             </div>
           </header>
 
-          <div class="placeholder-view">
-            <p class="placeholder-view__title">Checked out files will land here</p>
-            <p class="placeholder-view__text">The next iteration can render git changes in a layout similar to Source Control.</p>
+          <div class="changes-container" id="changesContainer">
+            <div class="changes-section" id="gitChangesSection">
+              <p class="changes-section__title">Uncommitted changes</p>
+              <div class="changes-file-list" id="gitChangesList">
+                <p class="empty-state__text">Loading...</p>
+              </div>
+            </div>
+            <div class="changes-section" id="liveChangesSection">
+              <p class="changes-section__title">Live edits <span class="meta-pill meta-pill--subtle changes-section__badge">streaming</span></p>
+              <div class="changes-file-list" id="liveChangesList"></div>
+            </div>
+          </div>
+
+          <div class="changes-diff-viewer" id="changesDiffViewer" hidden>
+            <div class="changes-diff-viewer__header">
+              <span class="changes-diff-viewer__name" id="changesDiffName"></span>
+              <span class="changes-diff-viewer__status" id="changesDiffStatus"></span>
+            </div>
+            <pre class="changes-diff-viewer__content" id="changesDiffContent"></pre>
           </div>
         </section>
 
-        <section id="panel-files" class="panel" aria-labelledby="files-heading" hidden>
+        <section id="panel-files" class="panel panel--files" aria-labelledby="files-heading" hidden>
           <header class="panel-header">
             <div>
-              <p class="eyebrow">Planned</p>
+              <p class="eyebrow">Workspace</p>
               <h2 id="files-heading">Files</h2>
             </div>
           </header>
 
-          <div class="placeholder-view">
-            <p class="placeholder-view__title">Files browser will land here</p>
-            <p class="placeholder-view__text">This panel is reserved for a workspace browser that feels closer to the Explorer.</p>
+          <nav class="file-breadcrumb" id="fileBreadcrumb" aria-label="File path">
+            <button class="file-breadcrumb__segment" data-path="." type="button">root</button>
+          </nav>
+
+          <div class="file-browser" id="fileBrowser">
+            <div class="file-list" id="fileList">
+              <p class="empty-state__text">Loading...</p>
+            </div>
+          </div>
+
+          <div class="file-viewer" id="fileViewer" hidden>
+            <div class="file-viewer__header">
+              <span class="file-viewer__name" id="fileViewerName"></span>
+              <span class="file-viewer__size" id="fileViewerSize"></span>
+            </div>
+            <pre class="file-viewer__content" id="fileViewerContent"></pre>
           </div>
         </section>
       </main>

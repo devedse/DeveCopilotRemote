@@ -1,9 +1,13 @@
+import { execFile } from 'child_process';
 import { randomBytes } from 'crypto';
 import * as http from 'http';
 import { networkInterfaces } from 'os';
 import * as path from 'path';
 import { promises as fs } from 'fs';
+import { promisify } from 'util';
 import * as vscode from 'vscode';
+
+const execFileAsync = promisify(execFile);
 
 type ChatMode = 'ask' | 'edit' | 'agent';
 type RequestedChatMode = ChatMode | 'current';
@@ -493,6 +497,42 @@ async function handleHttpRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/files') {
+    if (!isAuthorized(req, url, token)) {
+      writeJson(res, 401, { ok: false, error: 'Unauthorized.' });
+      return;
+    }
+    await handleFilesRequest(url, res);
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/file') {
+    if (!isAuthorized(req, url, token)) {
+      writeJson(res, 401, { ok: false, error: 'Unauthorized.' });
+      return;
+    }
+    await handleFileReadRequest(url, res);
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/git/status') {
+    if (!isAuthorized(req, url, token)) {
+      writeJson(res, 401, { ok: false, error: 'Unauthorized.' });
+      return;
+    }
+    await handleGitStatusRequest(res);
+    return;
+  }
+
+  if (method === 'GET' && url.pathname === '/api/git/diff') {
+    if (!isAuthorized(req, url, token)) {
+      writeJson(res, 401, { ok: false, error: 'Unauthorized.' });
+      return;
+    }
+    await handleGitDiffRequest(url, res);
+    return;
+  }
+
   if (method === 'POST' && url.pathname === '/api/chat/open') {
     if (!isAuthorized(req, url, token)) {
       writeJson(res, 401, { ok: false, error: 'Unauthorized.' });
@@ -693,6 +733,447 @@ function safeStringify(value: unknown): string {
     return JSON.stringify(value);
   } catch {
     return '[unserializable result]';
+  }
+}
+
+// ── File browser helpers ──
+
+function getWorkspaceRoot(): string | undefined {
+  const folders = vscode.workspace.workspaceFolders;
+  return folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
+}
+
+function resolveWorkspacePath(workspaceRoot: string, relativePath: string): string | null {
+  const resolved = path.resolve(workspaceRoot, relativePath);
+  // Prevent directory traversal
+  if (!resolved.startsWith(workspaceRoot + path.sep) && resolved !== workspaceRoot) {
+    return null;
+  }
+  return resolved;
+}
+
+async function handleFilesRequest(url: URL, res: http.ServerResponse): Promise<void> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    writeJson(res, 400, { ok: false, error: 'No workspace folder is open.' });
+    return;
+  }
+
+  const relativePath = url.searchParams.get('path') || '.';
+  const resolved = resolveWorkspacePath(workspaceRoot, relativePath);
+
+  if (!resolved) {
+    writeJson(res, 403, { ok: false, error: 'Path is outside the workspace.' });
+    return;
+  }
+
+  try {
+    const stat = await fs.stat(resolved);
+    if (!stat.isDirectory()) {
+      writeJson(res, 400, { ok: false, error: 'Path is not a directory.' });
+      return;
+    }
+
+    const entries = await fs.readdir(resolved, { withFileTypes: true });
+    const items = entries
+      .filter(e => !e.name.startsWith('.') && e.name !== 'node_modules')
+      .sort((a, b) => {
+        // Directories first, then files
+        if (a.isDirectory() && !b.isDirectory()) { return -1; }
+        if (!a.isDirectory() && b.isDirectory()) { return 1; }
+        return a.name.localeCompare(b.name);
+      })
+      .map(e => ({
+        name: e.name,
+        type: e.isDirectory() ? 'directory' : 'file',
+        path: path.relative(workspaceRoot, path.join(resolved, e.name)).replace(/\\/g, '/')
+      }));
+
+    writeJson(res, 200, { ok: true, path: path.relative(workspaceRoot, resolved).replace(/\\/g, '/') || '.', items });
+  } catch {
+    writeJson(res, 404, { ok: false, error: 'Directory not found.' });
+  }
+}
+
+async function handleFileReadRequest(url: URL, res: http.ServerResponse): Promise<void> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    writeJson(res, 400, { ok: false, error: 'No workspace folder is open.' });
+    return;
+  }
+
+  const relativePath = url.searchParams.get('path');
+  if (!relativePath) {
+    writeJson(res, 400, { ok: false, error: 'Path parameter is required.' });
+    return;
+  }
+
+  const resolved = resolveWorkspacePath(workspaceRoot, relativePath);
+  if (!resolved) {
+    writeJson(res, 403, { ok: false, error: 'Path is outside the workspace.' });
+    return;
+  }
+
+  try {
+    const stat = await fs.stat(resolved);
+    if (!stat.isFile()) {
+      writeJson(res, 400, { ok: false, error: 'Path is not a file.' });
+      return;
+    }
+
+    // Limit file size to 512KB for safety
+    if (stat.size > 512 * 1024) {
+      writeJson(res, 413, { ok: false, error: 'File too large (max 512 KB).' });
+      return;
+    }
+
+    const content = await fs.readFile(resolved, 'utf8');
+    const extension = path.extname(resolved).toLowerCase().replace('.', '');
+
+    writeJson(res, 200, {
+      ok: true,
+      path: relativePath,
+      name: path.basename(resolved),
+      extension,
+      size: stat.size,
+      content
+    });
+  } catch {
+    writeJson(res, 404, { ok: false, error: 'File not found.' });
+  }
+}
+
+async function handleGitStatusRequest(res: http.ServerResponse): Promise<void> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    writeJson(res, 400, { ok: false, error: 'No workspace folder is open.' });
+    return;
+  }
+
+  try {
+    const gitExt = vscode.extensions.getExtension('vscode.git');
+    if (!gitExt) {
+      writeJson(res, 200, { ok: true, branch: '', files: [], error: 'Git extension is not available.' });
+      return;
+    }
+
+    const git = gitExt.isActive ? gitExt.exports.getAPI(1) : (await gitExt.activate()).getAPI(1);
+    const repo = git.repositories[0];
+    if (!repo) {
+      writeJson(res, 200, { ok: true, branch: '', files: [], error: 'No git repository found.' });
+      return;
+    }
+
+    const branch = repo.state.HEAD?.name ?? '';
+
+    const files: Array<{ path: string; status: string }> = [];
+
+    // Index (staged) changes
+    for (const change of repo.state.indexChanges) {
+      files.push({
+        path: vscode.workspace.asRelativePath(change.uri, false),
+        status: gitStatusFromCode(change.status, true)
+      });
+    }
+
+    // Working tree (unstaged) changes
+    for (const change of repo.state.workingTreeChanges) {
+      files.push({
+        path: vscode.workspace.asRelativePath(change.uri, false),
+        status: gitStatusFromCode(change.status, false)
+      });
+    }
+
+    // Untracked
+    for (const change of repo.state.untrackedChanges ?? []) {
+      files.push({
+        path: vscode.workspace.asRelativePath(change.uri, false),
+        status: 'untracked'
+      });
+    }
+
+    // Merge changes
+    for (const change of repo.state.mergeChanges) {
+      files.push({
+        path: vscode.workspace.asRelativePath(change.uri, false),
+        status: 'conflict'
+      });
+    }
+
+    writeJson(res, 200, { ok: true, branch, files });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    writeJson(res, 200, { ok: true, branch: '', files: [], error: `Git query failed: ${message}` });
+  }
+}
+
+/**
+ * Find the git repository that contains `absoluteFilePath` and return
+ * the repo root + a posix path relative to that root.
+ */
+async function findRepoAndRelativePath(
+  absoluteFilePath: string
+): Promise<{ repoRoot: string; repoRelPath: string; repo: any } | null> {
+  const gitExt = vscode.extensions.getExtension('vscode.git');
+  if (!gitExt) { return null; }
+
+  const git = gitExt.isActive ? gitExt.exports.getAPI(1) : (await gitExt.activate()).getAPI(1);
+
+  // Pick the repo whose rootUri is an ancestor of the file
+  for (const repo of git.repositories) {
+    const repoRoot: string = repo.rootUri.fsPath;
+    const normalised = path.resolve(absoluteFilePath);
+    if (normalised.startsWith(repoRoot + path.sep) || normalised === repoRoot) {
+      const rel = path.relative(repoRoot, normalised).replace(/\\/g, '/');
+      return { repoRoot, repoRelPath: rel, repo };
+    }
+  }
+
+  // Fallback: first repo
+  const repo = git.repositories[0];
+  if (repo) {
+    const repoRoot: string = repo.rootUri.fsPath;
+    const rel = path.relative(repoRoot, path.resolve(absoluteFilePath)).replace(/\\/g, '/');
+    return { repoRoot, repoRelPath: rel, repo };
+  }
+  return null;
+}
+
+async function handleGitDiffRequest(url: URL, res: http.ServerResponse): Promise<void> {
+  const workspaceRoot = getWorkspaceRoot();
+  if (!workspaceRoot) {
+    writeJson(res, 400, { ok: false, error: 'No workspace folder is open.' });
+    return;
+  }
+
+  const filePath = url.searchParams.get('path');
+  if (!filePath) {
+    writeJson(res, 400, { ok: false, error: 'Path parameter is required.' });
+    return;
+  }
+
+  // Prevent directory traversal
+  const resolved = resolveWorkspacePath(workspaceRoot, filePath);
+  if (!resolved) {
+    writeJson(res, 403, { ok: false, error: 'Path is outside the workspace.' });
+    return;
+  }
+
+  try {
+    // Resolve the git repo root and the path relative to it
+    const info = await findRepoAndRelativePath(resolved);
+    const repoRoot = info?.repoRoot ?? workspaceRoot;
+    const repoRelPath = info?.repoRelPath ?? filePath.replace(/\\/g, '/');
+
+    // Try git diff CLI first — produces correct unified diff output
+    let diff = await gitDiffCli(repoRoot, repoRelPath);
+
+    if (!diff) {
+      // Fallback: build diff manually via the git extension API
+      diff = await gitDiffViaApi(repoRelPath, resolved, info?.repo);
+    }
+
+    writeJson(res, 200, { ok: true, path: filePath, diff });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    writeJson(res, 200, { ok: false, error: `Diff failed: ${message}` });
+  }
+}
+
+async function gitDiffCli(repoRoot: string, repoRelPath: string): Promise<string> {
+  const tryCommands: string[][] = [
+    // Working tree vs HEAD (covers staged + unstaged)
+    ['diff', 'HEAD', '--', repoRelPath],
+    // Staged (cached) changes only — catches newly added files
+    ['diff', '--cached', '--', repoRelPath],
+  ];
+
+  for (const args of tryCommands) {
+    try {
+      const { stdout } = await execFileAsync('git', args, {
+        cwd: repoRoot,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+      if (stdout.trim()) {
+        return stdout;
+      }
+    } catch {
+      // Command failed — try next variant
+    }
+  }
+  return '';
+}
+
+async function gitDiffViaApi(repoRelPath: string, resolved: string, repo: any): Promise<string> {
+  if (!repo) {
+    return '';
+  }
+
+  let currentContent = '';
+  try {
+    currentContent = await fs.readFile(resolved, 'utf8');
+  } catch {
+    // File may have been deleted
+  }
+
+  let headContent = '';
+  try {
+    headContent = await repo.show(`HEAD:${repoRelPath}`);
+  } catch {
+    // New file, not yet in HEAD
+  }
+
+  return buildLcsDiff(headContent, currentContent, repoRelPath);
+}
+
+type DiffOp = { type: 'equal' | 'remove' | 'add'; text: string };
+
+function buildLcsDiff(oldText: string, newText: string, filePath: string): string {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  const diffParts: string[] = [];
+
+  diffParts.push(`--- a/${filePath}`);
+  diffParts.push(`+++ b/${filePath}`);
+
+  if (oldText === newText) {
+    return diffParts.join('\n');
+  }
+
+  const ops = computeLcsDiff(oldLines, newLines);
+  const hunkLines = formatHunks(ops, 3);
+  diffParts.push(...hunkLines);
+
+  return diffParts.join('\n');
+}
+
+function computeLcsDiff(oldLines: string[], newLines: string[]): DiffOp[] {
+  const n = oldLines.length;
+  const m = newLines.length;
+
+  // For very large files, fall back to full remove + add
+  if (n > 0 && m > 0 && n * m > 10_000_000) {
+    const ops: DiffOp[] = [];
+    for (const line of oldLines) { ops.push({ type: 'remove', text: line }); }
+    for (const line of newLines) { ops.push({ type: 'add', text: line }); }
+    return ops;
+  }
+
+  // Standard LCS dynamic-programming table
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      dp[i][j] = oldLines[i - 1] === newLines[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  // Backtrack to produce edit operations
+  const reversed: DiffOp[] = [];
+  let i = n;
+  let j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
+      reversed.push({ type: 'equal', text: oldLines[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      reversed.push({ type: 'add', text: newLines[j - 1] });
+      j--;
+    } else {
+      reversed.push({ type: 'remove', text: oldLines[i - 1] });
+      i--;
+    }
+  }
+  reversed.reverse();
+  return reversed;
+}
+
+function formatHunks(ops: DiffOp[], contextSize: number): string[] {
+  // Pre-compute old/new line numbers at each op index
+  const oldLineAt = new Array<number>(ops.length + 1);
+  const newLineAt = new Array<number>(ops.length + 1);
+  oldLineAt[0] = 0;
+  newLineAt[0] = 0;
+  for (let k = 0; k < ops.length; k++) {
+    oldLineAt[k + 1] = oldLineAt[k] + (ops[k].type !== 'add' ? 1 : 0);
+    newLineAt[k + 1] = newLineAt[k] + (ops[k].type !== 'remove' ? 1 : 0);
+  }
+
+  // Find indices of all changed ops
+  const changePos: number[] = [];
+  for (let k = 0; k < ops.length; k++) {
+    if (ops[k].type !== 'equal') {
+      changePos.push(k);
+    }
+  }
+  if (changePos.length === 0) { return []; }
+
+  // Group changes into hunk ranges, merging when the gap is small
+  const ranges: Array<{ from: number; to: number }> = [];
+  let from = changePos[0];
+  let to = changePos[0];
+  for (let k = 1; k < changePos.length; k++) {
+    if (changePos[k] - to <= contextSize * 2) {
+      to = changePos[k];
+    } else {
+      ranges.push({ from, to });
+      from = changePos[k];
+      to = changePos[k];
+    }
+  }
+  ranges.push({ from, to });
+
+  // Format each hunk
+  const result: string[] = [];
+  for (const range of ranges) {
+    const start = Math.max(0, range.from - contextSize);
+    const end = Math.min(ops.length - 1, range.to + contextSize);
+
+    let oldCount = 0;
+    let newCount = 0;
+    const lines: string[] = [];
+
+    for (let k = start; k <= end; k++) {
+      const op = ops[k];
+      if (op.type === 'equal') {
+        lines.push(` ${op.text}`);
+        oldCount++;
+        newCount++;
+      } else if (op.type === 'remove') {
+        lines.push(`-${op.text}`);
+        oldCount++;
+      } else {
+        lines.push(`+${op.text}`);
+        newCount++;
+      }
+    }
+
+    const oldStart = oldLineAt[start] + 1;
+    const newStart = newLineAt[start] + 1;
+    result.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`);
+    result.push(...lines);
+  }
+
+  return result;
+}
+
+// VS Code Git extension status codes (numeric enum from the git extension)
+function gitStatusFromCode(status: number, staged: boolean): string {
+  const prefix = staged ? 'staged ' : '';
+  switch (status) {
+    case 0:  return prefix + 'modified';   // INDEX_MODIFIED
+    case 1:  return prefix + 'added';      // INDEX_ADDED
+    case 2:  return prefix + 'deleted';    // INDEX_DELETED
+    case 3:  return prefix + 'renamed';    // INDEX_RENAMED
+    case 4:  return prefix + 'copied';     // INDEX_COPIED
+    case 5:  return 'modified';
+    case 6:  return 'deleted';
+    case 7:  return 'untracked';
+    case 8:  return 'ignored';
+    case 9:  return 'intent-to-add';
+    default: return 'changed';
   }
 }
 

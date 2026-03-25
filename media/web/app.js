@@ -434,20 +434,198 @@ function renderSingleChange(file, container) {
   container.appendChild(fileBlock);
 }
 
-// Changes panel: live SSE stream
+// Changes panel: live SSE stream + git status
 const changesPanel = document.getElementById('panel-changes');
-const changesPanelContent = changesPanel?.querySelector('.placeholder-view');
+const gitChangesList = document.getElementById('gitChangesList');
+const liveChangesList = document.getElementById('liveChangesList');
+const changesBranch = document.getElementById('changesBranch');
+const changesRefreshBtn = document.getElementById('changesRefreshBtn');
 let changesEventSource = null;
+
+// Files panel
+const fileBrowser = document.getElementById('fileBrowser');
+const fileList = document.getElementById('fileList');
+const fileBreadcrumb = document.getElementById('fileBreadcrumb');
+const fileViewer = document.getElementById('fileViewer');
+const fileViewerName = document.getElementById('fileViewerName');
+const fileViewerSize = document.getElementById('fileViewerSize');
+const fileViewerContent = document.getElementById('fileViewerContent');
+let currentBrowsePath = '.';
 
 navButtons.forEach((button) => {
   button.addEventListener('click', () => {
-    if (button.dataset.panel === 'changes') {
+    const panel = button.dataset.panel;
+    if (panel === 'changes') {
+      loadGitStatus();
       startChangesStream();
     } else {
       stopChangesStream();
     }
+
+    if (panel === 'files') {
+      loadDirectory(currentBrowsePath);
+    }
   });
 });
+
+// ── Changes panel ──
+
+if (changesRefreshBtn) {
+  changesRefreshBtn.addEventListener('click', () => {
+    loadGitStatus();
+  });
+}
+
+async function loadGitStatus() {
+  if (!gitChangesList) {
+    return;
+  }
+
+  gitChangesList.innerHTML = '<p class="empty-state__text">Loading...</p>';
+
+  try {
+    const token = localStorage.getItem('deveCopilotRemoteToken') || '';
+    const response = await fetch(`/api/git/status?token=${encodeURIComponent(token)}`);
+    const payload = await response.json();
+
+    if (!response.ok || !payload.ok) {
+      gitChangesList.innerHTML = `<p class="empty-state__text">${payload.error || 'Failed to load.'}</p>`;
+      return;
+    }
+
+    if (changesBranch && payload.branch) {
+      changesBranch.textContent = payload.branch;
+    }
+
+    if (payload.error) {
+      gitChangesList.innerHTML = `<p class="empty-state__text">${payload.error}</p>`;
+      return;
+    }
+
+    gitChangesList.innerHTML = '';
+
+    if (!payload.files || payload.files.length === 0) {
+      gitChangesList.innerHTML = '<p class="empty-state__text">Working tree clean</p>';
+      return;
+    }
+
+    for (const file of payload.files) {
+      const row = createChangeRow(file.path, file.status);
+      gitChangesList.appendChild(row);
+    }
+  } catch {
+    gitChangesList.innerHTML = '<p class="empty-state__text">Could not load git status.</p>';
+  }
+}
+
+// Diff viewer elements
+const changesContainer = document.getElementById('changesContainer');
+const changesDiffViewer = document.getElementById('changesDiffViewer');
+const changesDiffName = document.getElementById('changesDiffName');
+const changesDiffStatus = document.getElementById('changesDiffStatus');
+const changesDiffContent = document.getElementById('changesDiffContent');
+
+function createChangeRow(filePath, status) {
+  const row = document.createElement('button');
+  row.className = 'change-row';
+  row.type = 'button';
+
+  // Extract the base status for CSS class (e.g. "staged modified" → "modified")
+  const baseStatus = status.replace(/^staged\s+/, '');
+
+  const badge = document.createElement('span');
+  badge.className = `diff-badge diff-badge--${baseStatus}`;
+  badge.textContent = baseStatus.charAt(0).toUpperCase();
+
+  const name = document.createElement('span');
+  name.className = 'change-row__name';
+  name.textContent = filePath;
+
+  const statusLabel = document.createElement('span');
+  statusLabel.className = 'change-row__status';
+  statusLabel.textContent = status;
+
+  row.appendChild(badge);
+  row.appendChild(name);
+  row.appendChild(statusLabel);
+
+  row.addEventListener('click', () => {
+    openChangeDiff(filePath, status);
+  });
+
+  return row;
+}
+
+async function openChangeDiff(filePath, status) {
+  if (!changesDiffViewer || !changesDiffContent) {
+    return;
+  }
+
+  // Show diff viewer alongside file list
+  changesDiffViewer.hidden = false;
+  const panel = document.getElementById('panel-changes');
+  if (panel) { panel.classList.add('has-viewer'); }
+
+  // Highlight selected row
+  if (gitChangesList) {
+    gitChangesList.querySelectorAll('.change-row').forEach(r => r.classList.remove('is-selected'));
+  }
+  if (liveChangesList) {
+    liveChangesList.querySelectorAll('.change-row').forEach(r => r.classList.remove('is-selected'));
+  }
+  const allRows = document.querySelectorAll('#changesContainer .change-row');
+  for (const row of allRows) {
+    if (row.querySelector('.change-row__name')?.textContent === filePath) {
+      row.classList.add('is-selected');
+    }
+  }
+
+  if (changesDiffName) { changesDiffName.textContent = filePath; }
+  if (changesDiffStatus) {
+    const baseStatus = status.replace(/^staged\s+/, '');
+    changesDiffStatus.textContent = status;
+    changesDiffStatus.className = `changes-diff-viewer__status diff-badge diff-badge--${baseStatus}`;
+  }
+  changesDiffContent.textContent = 'Loading diff...';
+
+  try {
+    const token = localStorage.getItem('deveCopilotRemoteToken') || '';
+    const response = await fetch(`/api/git/diff?path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`);
+    const payload = await response.json();
+
+    if (!response.ok || !payload.ok) {
+      changesDiffContent.textContent = payload.error || 'Failed to load diff.';
+      return;
+    }
+
+    // Render the diff with syntax highlighting
+    changesDiffContent.innerHTML = '';
+    const lines = payload.diff.split('\n');
+    for (const line of lines) {
+      const lineEl = document.createElement('span');
+
+      if (line.startsWith('+++') || line.startsWith('---')) {
+        lineEl.className = 'diff-line diff-line--meta';
+      } else if (line.startsWith('+')) {
+        lineEl.className = 'diff-line diff-line--added';
+      } else if (line.startsWith('-')) {
+        lineEl.className = 'diff-line diff-line--removed';
+      } else if (line.startsWith('@@')) {
+        lineEl.className = 'diff-line diff-line--hunk';
+      } else {
+        lineEl.className = 'diff-line';
+      }
+
+      lineEl.textContent = line;
+      changesDiffContent.appendChild(lineEl);
+      changesDiffContent.appendChild(document.createTextNode('\n'));
+    }
+  } catch {
+    changesDiffContent.textContent = 'Could not load diff.';
+  }
+}
+
+// (back button removed — list stays visible)
 
 function startChangesStream() {
   if (changesEventSource) {
@@ -457,21 +635,12 @@ function startChangesStream() {
   const token = localStorage.getItem('deveCopilotRemoteToken') || '';
   changesEventSource = new EventSource(`/api/changes?token=${encodeURIComponent(token)}`);
 
-  let target = changesPanel.querySelector('.changes-list');
-  if (!target) {
-    target = document.createElement('div');
-    target.className = 'changes-list';
-    changesPanel.appendChild(target);
-  }
-
-  if (changesPanelContent) {
-    changesPanelContent.hidden = true;
-  }
-
   changesEventSource.onmessage = (event) => {
     try {
       const change = JSON.parse(event.data);
-      renderSingleChange(change, target);
+      if (liveChangesList) {
+        renderSingleChange(change, liveChangesList);
+      }
     } catch {
       // ignore parse errors
     }
@@ -487,4 +656,165 @@ function stopChangesStream() {
     changesEventSource.close();
     changesEventSource = null;
   }
+}
+
+// ── Files panel ──
+
+async function loadDirectory(dirPath) {
+  if (!fileList) {
+    return;
+  }
+
+  currentBrowsePath = dirPath;
+  fileList.innerHTML = '<p class="empty-state__text">Loading...</p>';
+
+  try {
+    const token = localStorage.getItem('deveCopilotRemoteToken') || '';
+    const response = await fetch(`/api/files?path=${encodeURIComponent(dirPath)}&token=${encodeURIComponent(token)}`);
+    const payload = await response.json();
+
+    if (!response.ok || !payload.ok) {
+      fileList.innerHTML = `<p class="empty-state__text">${payload.error || 'Failed to load.'}</p>`;
+      return;
+    }
+
+    currentBrowsePath = payload.path || '.';
+    updateBreadcrumb(currentBrowsePath);
+    fileList.innerHTML = '';
+
+    // Add parent directory entry if not at root
+    if (currentBrowsePath !== '.') {
+      const parentPath = currentBrowsePath.includes('/')
+        ? currentBrowsePath.substring(0, currentBrowsePath.lastIndexOf('/'))
+        : '.';
+      const parentRow = createFileRow('..', 'directory', parentPath);
+      fileList.appendChild(parentRow);
+    }
+
+    if (payload.items.length === 0) {
+      fileList.innerHTML = '<p class="empty-state__text">Empty directory</p>';
+      return;
+    }
+
+    for (const item of payload.items) {
+      const row = createFileRow(item.name, item.type, item.path);
+      fileList.appendChild(row);
+    }
+  } catch {
+    fileList.innerHTML = '<p class="empty-state__text">Could not load files.</p>';
+  }
+}
+
+function createFileRow(name, type, itemPath) {
+  const row = document.createElement('button');
+  row.className = `file-row file-row--${type}`;
+  row.type = 'button';
+
+  const icon = document.createElement('span');
+  icon.className = 'file-row__icon';
+  icon.textContent = type === 'directory' ? '\uD83D\uDCC1' : '\uD83D\uDCC4';
+
+  const label = document.createElement('span');
+  label.className = 'file-row__name';
+  label.textContent = name;
+
+  row.appendChild(icon);
+  row.appendChild(label);
+
+  row.addEventListener('click', () => {
+    if (type === 'directory') {
+      loadDirectory(itemPath);
+    } else {
+      openFileViewer(itemPath);
+    }
+  });
+
+  return row;
+}
+
+function updateBreadcrumb(browsePath) {
+  if (!fileBreadcrumb) {
+    return;
+  }
+
+  fileBreadcrumb.innerHTML = '';
+
+  const rootBtn = document.createElement('button');
+  rootBtn.className = 'file-breadcrumb__segment';
+  rootBtn.type = 'button';
+  rootBtn.textContent = 'root';
+  rootBtn.addEventListener('click', () => loadDirectory('.'));
+  fileBreadcrumb.appendChild(rootBtn);
+
+  if (browsePath && browsePath !== '.') {
+    const parts = browsePath.split('/');
+    let accumulated = '';
+    for (const part of parts) {
+      accumulated = accumulated ? accumulated + '/' + part : part;
+
+      const sep = document.createElement('span');
+      sep.className = 'file-breadcrumb__sep';
+      sep.textContent = '/';
+      fileBreadcrumb.appendChild(sep);
+
+      const btn = document.createElement('button');
+      btn.className = 'file-breadcrumb__segment';
+      btn.type = 'button';
+      btn.textContent = part;
+      const targetPath = accumulated;
+      btn.addEventListener('click', () => loadDirectory(targetPath));
+      fileBreadcrumb.appendChild(btn);
+    }
+  }
+}
+
+async function openFileViewer(filePath) {
+  if (!fileViewer || !fileViewerContent) {
+    return;
+  }
+
+  fileViewerContent.textContent = 'Loading...';
+  fileViewerName.textContent = filePath;
+  fileViewerSize.textContent = '';
+
+  // Show viewer alongside file browser
+  fileViewer.hidden = false;
+  const panel = document.getElementById('panel-files');
+  if (panel) { panel.classList.add('has-viewer'); }
+
+  // Highlight selected row
+  if (fileList) {
+    fileList.querySelectorAll('.file-row').forEach(r => r.classList.remove('is-selected'));
+  }
+  const allRows = fileList ? fileList.querySelectorAll('.file-row') : [];
+  for (const row of allRows) {
+    if (row.querySelector('.file-row__name')?.textContent === filePath.split('/').pop()) {
+      row.classList.add('is-selected');
+    }
+  }
+
+  try {
+    const token = localStorage.getItem('deveCopilotRemoteToken') || '';
+    const response = await fetch(`/api/file?path=${encodeURIComponent(filePath)}&token=${encodeURIComponent(token)}`);
+    const payload = await response.json();
+
+    if (!response.ok || !payload.ok) {
+      fileViewerContent.textContent = payload.error || 'Failed to load file.';
+      return;
+    }
+
+    fileViewerName.textContent = payload.name || filePath;
+    fileViewerSize.textContent = formatFileSize(payload.size);
+    fileViewerContent.textContent = payload.content;
+  } catch {
+    fileViewerContent.textContent = 'Could not load file.';
+  }
+}
+
+// (back button removed — list stays visible)
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) { return bytes + ' B'; }
+  if (bytes < 1024 * 1024) { return (bytes / 1024).toFixed(1) + ' KB'; }
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
