@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useMarkdown } from '@/composables/useMarkdown'
+import { useChatStore } from '@/stores/chatStore'
 import type { ChatMessage } from '@/types'
 
 const props = defineProps<{
   message: ChatMessage
 }>()
 
+const chatStore = useChatStore()
 const { render } = useMarkdown()
 
 const renderedContent = computed(() => {
@@ -81,7 +83,16 @@ const formattedTime = computed(() => {
 
       <!-- Error -->
       <div v-if="message.status === 'error' && message.error" class="mt-2 rounded-md bg-red-950/50 px-3 py-2 text-xs text-red-300">
-        {{ message.error }}
+        <span>{{ message.error }}</span>
+        <button
+          v-if="message.role === 'assistant'"
+          type="button"
+          class="ml-2 inline-flex items-center gap-1 rounded bg-red-900/60 px-2 py-0.5 font-medium text-red-200 transition-colors hover:bg-red-800/70 disabled:opacity-40"
+          :disabled="chatStore.isLoadingHistory"
+          @click="chatStore.loadHistory()"
+        >
+          {{ chatStore.isLoadingHistory ? 'Loading…' : '↻ History' }}
+        </button>
       </div>
 
       <!-- File changes -->

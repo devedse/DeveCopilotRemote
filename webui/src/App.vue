@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useConnectionStore } from '@/stores/connectionStore'
 import TopBar from '@/components/TopBar.vue'
 import TabNav from '@/components/TabNav.vue'
@@ -32,9 +32,21 @@ function showToast(message: string, type: 'success' | 'error' = 'success') {
 // Expose globally so stores/composables can trigger toasts
 ;(window as unknown as { showToast: typeof showToast }).showToast = showToast
 
+// Re-check connection when the page becomes visible again (e.g. phone wakes)
+function onVisibilityChange() {
+  if (document.visibilityState === 'visible') {
+    connection.initialize()
+  }
+}
+
 onMounted(async () => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
   await connection.initialize()
   await connection.loadModels()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
 })
 </script>
 

@@ -15,15 +15,20 @@ const selectedStatus = ref('')
 const diffContent = ref('')
 const diffLoading = ref(false)
 
+let refreshInterval: ReturnType<typeof setInterval> | undefined
+
 onMounted(() => {
   changesStore.loadGitStatus()
   startSse((data: unknown) => {
     changesStore.addLiveChange(data as FileChange)
   })
+  // Auto-refresh git status every 5 seconds
+  refreshInterval = setInterval(() => changesStore.loadGitStatus(), 5000)
 })
 
 onUnmounted(() => {
   stopSse()
+  if (refreshInterval) clearInterval(refreshInterval)
 })
 
 async function selectFile(path: string, status: string) {
