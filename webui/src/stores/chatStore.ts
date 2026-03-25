@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { ChatMessage, ChatMode, SendPromptPayload, StreamEvent, FileChange } from '@/types'
 import { postChatStream, consumeNdjsonStream } from '@/composables/useNdjsonStream'
+import { apiFetch } from '@/composables/useApi'
 
 let nextId = 1
 function genId(): string {
@@ -11,6 +12,8 @@ function genId(): string {
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessage[]>([])
   const isSending = ref(false)
+  const isLoadingHistory = ref(false)
+  const historyError = ref('')
 
   function addUserMessage(payload: SendPromptPayload): ChatMessage {
     const msg: ChatMessage = {
@@ -128,5 +131,52 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
   }
 
-  return { messages, isSending, sendPrompt, addNativeMessages, clearMessages }
+  function keepLastN(n: number) {
+    if (messages.value.length > n) {
+      messages.value = messages.value.slice(-n)
+    }
+  }
+
+  async function loadHistory() {
+    if (isSending.value || isLoadingHistory.value) return
+
+    isLoadingHistory.value = true
+    historyError.value = ''
+
+    try {
+      const data = await apiFetch<{
+        ok: boolean
+        messages?: Array<{ role: 'user' | 'assistant'; content: string }>
+        error?: string
+        note?: string
+      }>('/api/chat/history')
+
+      if (!data.ok) {
+        historyError.value = data.error ?? 'Failed to load history.'
+        return
+      }
+
+      const parsed = data.messages ?? []
+      if (parsed.length === 0) {
+        historyError.value = data.note ?? 'No chat history found.'
+        return
+      }
+
+      // Full replace: native chat is the source of truth
+      messages.value = parsed.map(entry => ({
+        id: genId(),
+        role: entry.role,
+        content: entry.content,
+        timestamp: new Date().toISOString(),
+        status: 'done' as const,
+        source: 'native' as const,
+      }))
+    } catch (err) {
+      historyError.value = err instanceof Error ? err.message : String(err)
+    } finally {
+      isLoadingHistory.value = false
+    }
+  }
+
+  return { messages, isSending, isLoadingHistory, historyError, sendPrompt, addNativeMessages, loadHistory, clearMessages, keepLastN }
 })

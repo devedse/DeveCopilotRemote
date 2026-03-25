@@ -54,6 +54,7 @@ type StreamEvent =
   | { type: 'done'; note?: string };
 
 const OPEN_CHAT_COMMAND = 'workbench.action.chat.open';
+const COPY_ALL_CHAT_COMMAND = 'workbench.action.chat.copyAll';
 const SEND_PROMPT_COMMAND = 'deveCopilotRemote.sendPromptToChat';
 const SUMMARIZE_ACTIVE_FILE_COMMAND = 'deveCopilotRemote.summarizeActiveFile';
 const OPEN_WEB_UI_COMMAND = 'deveCopilotRemote.openWebUi';
@@ -535,6 +536,15 @@ async function handleHttpRequest(
     return;
   }
 
+  if (method === 'GET' && url.pathname === '/api/chat/history') {
+    if (!isAuthorized(req, url, token)) {
+      writeJson(res, 401, { ok: false, error: 'Unauthorized.' });
+      return;
+    }
+    await handleChatHistoryRequest(res, output);
+    return;
+  }
+
   if (method === 'POST' && url.pathname === '/api/chat/open') {
     if (!isAuthorized(req, url, token)) {
       writeJson(res, 401, { ok: false, error: 'Unauthorized.' });
@@ -739,6 +749,120 @@ function safeStringify(value: unknown): string {
   } catch {
     return '[unserializable result]';
   }
+}
+
+// ── Chat history helpers ──
+
+async function handleChatHistoryRequest(res: http.ServerResponse, output: vscode.OutputChannel): Promise<void> {
+  try {
+    // 1. Save current clipboard
+    const savedClipboard = await vscode.env.clipboard.readText();
+
+    // 2. Clear clipboard so we can detect when copyAll writes to it
+    await vscode.env.clipboard.writeText('');
+
+    // 3. Execute the copy-all command
+    await vscode.commands.executeCommand(COPY_ALL_CHAT_COMMAND);
+
+    // 4. Small delay to allow clipboard to be written
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // 5. Read the chat content
+    const chatText = await vscode.env.clipboard.readText();
+
+    // 6. Restore original clipboard
+    await vscode.env.clipboard.writeText(savedClipboard);
+
+    if (!chatText || chatText.trim().length === 0) {
+      writeJson(res, 200, { ok: true, messages: [], note: 'No chat history found (chat panel may be empty or closed).' });
+      return;
+    }
+
+    // 7. Parse into structured messages
+    const messages = parseChatHistory(chatText);
+    output.appendLine(`Chat history: parsed ${messages.length} messages from ${chatText.length} chars of clipboard text`);
+
+    writeJson(res, 200, { ok: true, messages });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    output.appendLine(`Chat history error: ${message}`);
+    writeJson(res, 500, { ok: false, error: `Failed to read chat history: ${message}` });
+  }
+}
+
+function parseChatHistory(text: string): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  const lines = text.split('\n');
+  let currentRole: 'user' | 'assistant' | '' = '';
+  let currentContent: string[] = [];
+  let skipNextTimestamp = false;
+
+  function pushCurrent() {
+    if (currentRole && currentContent.length > 0) {
+      const content = currentContent.join('\n').trim();
+      if (content.length > 0) {
+        messages.push({ role: currentRole, content });
+      }
+    }
+    currentContent = [];
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Role marker: standalone "You" line → user message starts
+    if (/^You$/i.test(trimmed)) {
+      pushCurrent();
+      currentRole = 'user';
+      skipNextTimestamp = true;
+      continue;
+    }
+
+    // Role marker: standalone "GitHub Copilot" or "Copilot" → assistant starts
+    if (/^(GitHub Copilot|Copilot)$/i.test(trimmed)) {
+      pushCurrent();
+      currentRole = 'assistant';
+      skipNextTimestamp = true;
+      continue;
+    }
+
+    // Skip timestamp lines right after role markers (e.g. "19:32" or "19:32:01")
+    if (skipNextTimestamp && /^\d{1,2}:\d{2}(:\d{2})?$/.test(trimmed)) {
+      skipNextTimestamp = false;
+      continue;
+    }
+    skipNextTimestamp = false;
+
+    // Inline format: "@workspace ..." starts a user message
+    if (trimmed.startsWith('@workspace') && currentRole !== 'user') {
+      pushCurrent();
+      currentRole = 'user';
+      currentContent = [line];
+      continue;
+    }
+
+    // Inline format: "GitHub Copilot: ..." starts an assistant message
+    if (/^GitHub Copilot:\s*/i.test(trimmed)) {
+      pushCurrent();
+      currentRole = 'assistant';
+      const after = trimmed.replace(/^GitHub Copilot:\s*/i, '');
+      if (after) {
+        currentContent = [after];
+      }
+      continue;
+    }
+
+    // Accumulate content for the current role
+    if (currentRole) {
+      currentContent.push(line);
+    }
+  }
+
+  // Push final message
+  pushCurrent();
+
+  return messages;
 }
 
 // ── File browser helpers ──

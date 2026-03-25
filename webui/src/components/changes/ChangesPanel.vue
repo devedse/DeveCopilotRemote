@@ -86,10 +86,20 @@ async function selectFile(path: string, status: string) {
       </div>
 
       <!-- Live edits -->
-      <p class="mb-1 mt-4 flex items-center gap-1.5 px-2 text-[10px] font-medium uppercase tracking-wider text-gray-500">
-        Live edits
-        <span class="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-      </p>
+      <div class="mb-1 mt-4 flex items-center justify-between px-2">
+        <p class="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-gray-500">
+          Live edits
+          <span class="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+        </p>
+        <button
+          v-if="changesStore.liveChanges.length > 0"
+          type="button"
+          class="rounded-md px-1.5 py-0.5 text-[10px] text-gray-400 transition-colors hover:bg-surface-hover hover:text-gray-200"
+          @click="changesStore.clearLiveChanges()"
+        >
+          Clear
+        </button>
+      </div>
       <div v-if="changesStore.liveChanges.length === 0" class="px-3 py-2 text-xs text-gray-500">No live edits yet</div>
       <div v-else class="space-y-0.5">
         <ChangeRow
