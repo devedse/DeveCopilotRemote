@@ -141,6 +141,9 @@ vite.config.ts.timestamp-*
 # VS Code extension packaging
 *.vsix
 
+# Local build number (auto-incremented by build script)
+build-number.txt
+
 # Vite build output (served by extension, rebuilt from webui/)
 media/web/assets/
 media/web/index.html

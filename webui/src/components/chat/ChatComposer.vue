@@ -10,7 +10,7 @@ const chatStore = useChatStore()
 const prompt = ref('')
 const mode = ref<ChatMode>(connection.defaultMode)
 const model = ref('')
-const attachActiveFile = ref(true)
+const attachActiveFile = ref(false)
 
 const charCount = computed(() => `${prompt.value.length} / 12000`)
 const canSend = computed(() => prompt.value.trim().length > 0 && !chatStore.isSending)

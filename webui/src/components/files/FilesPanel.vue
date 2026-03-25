@@ -1,11 +1,25 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { useFilesStore } from '@/stores/filesStore'
 import Breadcrumb from './Breadcrumb.vue'
 import FileList from './FileList.vue'
 import FileViewer from './FileViewer.vue'
 
 const filesStore = useFilesStore()
+const fileListContainer = ref<HTMLElement | null>(null)
+let savedScrollTop = 0
+
+// Preserve scroll position when the container resizes due to viewer opening
+watch(() => filesStore.viewerFile, async (newVal, oldVal) => {
+  if (newVal && !oldVal) {
+    // Viewer opening — save scroll position before resize
+    savedScrollTop = fileListContainer.value?.scrollTop ?? 0
+    await nextTick()
+    if (fileListContainer.value) {
+      fileListContainer.value.scrollTop = savedScrollTop
+    }
+  }
+})
 
 onMounted(() => {
   filesStore.loadDirectory('.')
@@ -24,7 +38,7 @@ onMounted(() => {
     <Breadcrumb :path="filesStore.currentPath" @navigate="filesStore.loadDirectory" />
 
     <!-- Directory listing (always visible) -->
-    <div class="overflow-y-auto border-b border-border-default" :class="filesStore.viewerFile ? 'max-h-48 sm:max-h-64' : 'flex-1'">
+    <div ref="fileListContainer" class="overflow-y-auto border-b border-border-default" :class="filesStore.viewerFile ? 'max-h-48 sm:max-h-64' : 'flex-1'">
       <div v-if="filesStore.isLoading" class="p-4 text-xs text-gray-500">Loading...</div>
       <div v-else-if="filesStore.error" class="p-4 text-xs text-gray-500">{{ filesStore.error }}</div>
       <FileList
