@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useChangesStore } from '@/stores/changesStore'
 import { apiFetch } from '@/composables/useApi'
 import { useSse } from '@/composables/useSse'
@@ -14,6 +14,10 @@ const selectedPath = ref('')
 const selectedStatus = ref('')
 const diffContent = ref('')
 const diffLoading = ref(false)
+
+const totalFiles = computed(() =>
+  changesStore.repos.reduce((sum, r) => sum + r.files.length, 0)
+)
 
 let refreshInterval: ReturnType<typeof setInterval> | undefined
 
@@ -59,9 +63,6 @@ async function selectFile(path: string, status: string) {
         <h2 class="text-sm font-semibold text-gray-100">Changes</h2>
       </div>
       <div class="flex items-center gap-2">
-        <span v-if="changesStore.branch" class="rounded-md bg-surface px-2 py-0.5 text-[10px] text-gray-500">
-          {{ changesStore.branch }}
-        </span>
         <button
           type="button"
           class="rounded-md px-2 py-1 text-xs text-gray-400 hover:bg-surface-hover hover:text-gray-200"
@@ -78,17 +79,32 @@ async function selectFile(path: string, status: string) {
       <p class="mb-1 px-2 text-[10px] font-medium uppercase tracking-wider text-gray-500">Uncommitted changes</p>
       <div v-if="changesStore.isLoading" class="px-3 py-2 text-xs text-gray-500">Loading...</div>
       <div v-else-if="changesStore.gitError" class="px-3 py-2 text-xs text-gray-500">{{ changesStore.gitError }}</div>
-      <div v-else-if="changesStore.gitFiles.length === 0" class="px-3 py-2 text-xs text-gray-500">Working tree clean</div>
-      <div v-else class="space-y-0.5">
-        <ChangeRow
-          v-for="file in changesStore.gitFiles"
-          :key="file.path"
-          :file-path="file.path"
-          :status="file.status"
-          :selected="selectedPath === file.path"
-          @select="selectFile"
-        />
-      </div>
+      <div v-else-if="totalFiles === 0" class="px-3 py-2 text-xs text-gray-500">Working tree clean</div>
+      <template v-else>
+        <div v-for="repo in changesStore.repos" :key="repo.repoName">
+          <template v-if="repo.files.length > 0">
+            <!-- Repo header (only shown when multiple repos) -->
+            <div v-if="changesStore.repos.length > 1" class="mt-2 mb-1 flex items-center gap-2 px-2">
+              <span class="text-[10px] font-semibold text-gray-300">{{ repo.repoName }}</span>
+              <span class="rounded-md bg-surface px-2 py-0.5 text-[10px] text-gray-500">{{ repo.branch }}</span>
+            </div>
+            <!-- Single repo: show branch badge inline -->
+            <div v-else class="mb-1 flex items-center gap-2 px-2">
+              <span class="rounded-md bg-surface px-2 py-0.5 text-[10px] text-gray-500">{{ repo.branch }}</span>
+            </div>
+            <div class="space-y-0.5">
+              <ChangeRow
+                v-for="file in repo.files"
+                :key="file.path"
+                :file-path="file.path"
+                :status="file.status"
+                :selected="selectedPath === file.path"
+                @select="selectFile"
+              />
+            </div>
+          </template>
+        </div>
+      </template>
 
       <!-- Live edits -->
       <div class="mb-1 mt-4 flex items-center justify-between px-2">

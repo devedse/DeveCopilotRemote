@@ -1000,52 +1000,59 @@ async function handleGitStatusRequest(res: http.ServerResponse): Promise<void> {
     }
 
     const git = gitExt.isActive ? gitExt.exports.getAPI(1) : (await gitExt.activate()).getAPI(1);
-    const repo = git.repositories[0];
-    if (!repo) {
-      writeJson(res, 200, { ok: true, branch: '', files: [], error: 'No git repository found.' });
+    if (!git.repositories.length) {
+      writeJson(res, 200, { ok: true, repos: [], error: 'No git repository found.' });
       return;
     }
 
-    const branch = repo.state.HEAD?.name ?? '';
+    const repos: Array<{ repoName: string; branch: string; files: Array<{ path: string; status: string }> }> = [];
 
-    const files: Array<{ path: string; status: string }> = [];
+    for (const repo of git.repositories) {
+      const repoRoot = repo.rootUri.fsPath;
+      const repoName = vscode.workspace.asRelativePath(repoRoot, false);
+      const branch = repo.state.HEAD?.name ?? '';
 
-    // Index (staged) changes
-    for (const change of repo.state.indexChanges) {
-      files.push({
-        path: vscode.workspace.asRelativePath(change.uri, false),
-        status: gitStatusFromCode(change.status, true)
-      });
+      const files: Array<{ path: string; status: string }> = [];
+
+      // Index (staged) changes
+      for (const change of repo.state.indexChanges) {
+        files.push({
+          path: vscode.workspace.asRelativePath(change.uri, false),
+          status: gitStatusFromCode(change.status, true)
+        });
+      }
+
+      // Working tree (unstaged) changes
+      for (const change of repo.state.workingTreeChanges) {
+        files.push({
+          path: vscode.workspace.asRelativePath(change.uri, false),
+          status: gitStatusFromCode(change.status, false)
+        });
+      }
+
+      // Untracked
+      for (const change of repo.state.untrackedChanges ?? []) {
+        files.push({
+          path: vscode.workspace.asRelativePath(change.uri, false),
+          status: 'untracked'
+        });
+      }
+
+      // Merge changes
+      for (const change of repo.state.mergeChanges) {
+        files.push({
+          path: vscode.workspace.asRelativePath(change.uri, false),
+          status: 'conflict'
+        });
+      }
+
+      repos.push({ repoName, branch, files });
     }
 
-    // Working tree (unstaged) changes
-    for (const change of repo.state.workingTreeChanges) {
-      files.push({
-        path: vscode.workspace.asRelativePath(change.uri, false),
-        status: gitStatusFromCode(change.status, false)
-      });
-    }
-
-    // Untracked
-    for (const change of repo.state.untrackedChanges ?? []) {
-      files.push({
-        path: vscode.workspace.asRelativePath(change.uri, false),
-        status: 'untracked'
-      });
-    }
-
-    // Merge changes
-    for (const change of repo.state.mergeChanges) {
-      files.push({
-        path: vscode.workspace.asRelativePath(change.uri, false),
-        status: 'conflict'
-      });
-    }
-
-    writeJson(res, 200, { ok: true, branch, files });
+    writeJson(res, 200, { ok: true, repos });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    writeJson(res, 200, { ok: true, branch: '', files: [], error: `Git query failed: ${message}` });
+    writeJson(res, 200, { ok: true, repos: [], error: `Git query failed: ${message}` });
   }
 }
 

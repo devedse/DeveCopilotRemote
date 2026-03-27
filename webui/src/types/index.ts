@@ -54,10 +54,15 @@ export interface FileChange {
   diff: string
 }
 
+export interface GitRepoStatus {
+  repoName: string
+  branch: string
+  files: Array<{ path: string; status: string }>
+}
+
 export interface GitStatusResponse {
   ok: boolean
-  branch?: string
-  files?: Array<{ path: string; status: string }>
+  repos?: GitRepoStatus[]
   error?: string
 }
 

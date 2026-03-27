@@ -1,11 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { apiFetch } from '@/composables/useApi'
-import type { FileChange, GitStatusResponse } from '@/types'
+import type { FileChange, GitStatusResponse, GitRepoStatus } from '@/types'
 
 export const useChangesStore = defineStore('changes', () => {
-  const branch = ref('')
-  const gitFiles = ref<Array<{ path: string; status: string }>>([])
+  const repos = ref<GitRepoStatus[]>([])
   const liveChanges = ref<FileChange[]>([])
   const gitError = ref('')
   const isLoading = ref(false)
@@ -16,8 +15,7 @@ export const useChangesStore = defineStore('changes', () => {
     try {
       const data = await apiFetch<GitStatusResponse>('/api/git/status')
       if (data.ok) {
-        branch.value = data.branch ?? ''
-        gitFiles.value = data.files ?? []
+        repos.value = data.repos ?? []
         if (data.error) gitError.value = data.error
       }
     } catch (err) {
@@ -35,5 +33,5 @@ export const useChangesStore = defineStore('changes', () => {
     liveChanges.value = []
   }
 
-  return { branch, gitFiles, liveChanges, gitError, isLoading, loadGitStatus, addLiveChange, clearLiveChanges }
+  return { repos, liveChanges, gitError, isLoading, loadGitStatus, addLiveChange, clearLiveChanges }
 })
