@@ -37,6 +37,11 @@ type ChatRequestBody = {
   model?: string;
 };
 
+type GitRepository = {
+  rootUri: vscode.Uri;
+  show(ref: string): Promise<string>;
+};
+
 type FileChange = {
   path: string;
   status: string;
@@ -261,7 +266,15 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 }
 
-export function deactivate(): void {}
+export function deactivate(): void {
+  if (webUiState) {
+    for (const listener of changeListeners) {
+      changeListeners.delete(listener);
+    }
+    webUiState.server.close();
+    webUiState = undefined;
+  }
+}
 
 async function sendPromptToNativeChat(output: vscode.OutputChannel): Promise<void> {
   const prompt = await vscode.window.showInputBox({
@@ -493,10 +506,14 @@ async function handleHttpRequest(
     };
     changeListeners.add(listener);
 
-    req.on('close', () => {
+    const cleanup = () => {
       changeListeners.delete(listener);
-      res.end();
-    });
+      if (!res.writableEnded) {
+        res.end();
+      }
+    };
+    req.on('close', cleanup);
+    res.on('error', cleanup);
     return;
   }
 
@@ -608,8 +625,8 @@ async function handleHttpRequest(
   }
 
   if (method === 'GET') {
-    const requestedPath = path.normalize(path.join(mediaRoot, url.pathname.replace(/^\/+/, '')));
-    if (!requestedPath.startsWith(mediaRoot)) {
+    const requestedPath = path.resolve(path.join(mediaRoot, url.pathname.replace(/^\/+/, '')));
+    if (!requestedPath.startsWith(mediaRoot + path.sep) && requestedPath !== mediaRoot) {
       writeJson(res, 403, { ok: false, error: 'Forbidden.' });
       return;
     }
@@ -1062,7 +1079,7 @@ async function handleGitStatusRequest(res: http.ServerResponse): Promise<void> {
  */
 async function findRepoAndRelativePath(
   absoluteFilePath: string
-): Promise<{ repoRoot: string; repoRelPath: string; repo: any } | null> {
+): Promise<{ repoRoot: string; repoRelPath: string; repo: GitRepository } | null> {
   const gitExt = vscode.extensions.getExtension('vscode.git');
   if (!gitExt) { return null; }
 
@@ -1153,7 +1170,7 @@ async function gitDiffCli(repoRoot: string, repoRelPath: string): Promise<string
   return '';
 }
 
-async function gitDiffViaApi(repoRelPath: string, resolved: string, repo: any): Promise<string> {
+async function gitDiffViaApi(repoRelPath: string, resolved: string, repo: GitRepository | undefined): Promise<string> {
   if (!repo) {
     return '';
   }
