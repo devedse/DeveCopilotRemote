@@ -307,7 +307,19 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       updateAuthModeStatusBar(authModeItem);
-      vscode.window.showInformationMessage(`DeveCopilotRemote auth mode set to: ${configuration.get<string>('webUi.authMode', 'token')}`);
+      const finalMode = vscode.workspace.getConfiguration('deveCopilotRemote').get<string>('webUi.authMode', 'token');
+      vscode.window.showInformationMessage(`DeveCopilotRemote auth mode set to: ${finalMode}`);
+
+      // Re-print URLs to output so user sees the updated links
+      if (webUiState) {
+        const urls = getWebUiUrls(webUiState);
+        output.appendLine(`Auth mode changed to: ${finalMode}`);
+        output.appendLine(`Local URL: ${urls.localUrl}`);
+        if (urls.externalUrl) {
+          output.appendLine(`Mobile URL: ${urls.externalUrl}`);
+        }
+        output.show(true);
+      }
     })
   );
 
