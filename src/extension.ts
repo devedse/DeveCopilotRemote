@@ -300,7 +300,7 @@ export function activate(context: vscode.ExtensionContext): void {
           if (newPassword) {
             await configuration.update('webUi.password', newPassword, vscode.ConfigurationTarget.Global);
           } else {
-            // Cancelled — revert to token mode
+            // Cancelled, revert to token mode
             await configuration.update('webUi.authMode', 'token', vscode.ConfigurationTarget.Global);
           }
         }
