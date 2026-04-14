@@ -7,9 +7,7 @@ const connection = useConnectionStore()
 <template>
   <header class="flex items-center justify-between gap-4 rounded-xl border border-border-default bg-surface-alt px-4 py-3 shadow-lg">
     <div class="flex items-center gap-3">
-      <div class="grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-br from-blue-600 to-brand font-extrabold tracking-wide text-white">
-        DC
-      </div>
+      <img src="/icon.png" alt="DeveCopilotRemote" class="h-10 w-10 rounded-lg" />
       <div>
         <p class="text-xs font-medium uppercase tracking-wider text-gray-500">Remote control</p>
         <h1 class="text-sm font-semibold text-gray-100">DeveCopilotRemote</h1>

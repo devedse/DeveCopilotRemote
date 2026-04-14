@@ -55,11 +55,7 @@ async function submit() {
   <div class="flex min-h-dvh items-center justify-center p-4">
     <div class="w-full max-w-sm rounded-xl border border-border-default bg-surface-alt p-6 shadow-lg">
       <div class="mb-6 flex flex-col items-center gap-3">
-        <div
-          class="grid h-14 w-14 place-items-center rounded-lg bg-gradient-to-br from-blue-600 to-brand text-xl font-extrabold tracking-wide text-white"
-        >
-          DC
-        </div>
+        <img src="/icon.png" alt="DeveCopilotRemote" class="h-14 w-14 rounded-lg" />
         <h1 class="text-lg font-semibold text-gray-100">DeveCopilotRemote</h1>
         <p class="text-center text-sm text-gray-400">
           {{ authMode === 'password' ? 'Enter the password to connect' : 'Enter the access token to connect' }}
