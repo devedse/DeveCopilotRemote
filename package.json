@@ -1,5 +1,5 @@
 {
-  "name": "devecopilotremote",
+  "name": "deve-copilot-remote",
   "displayName": "DeveCopilotRemote",
   "description": "VS Code extension that lets you drive the native Copilot chat panel from a mobile device.",
   "version": "0.0.1",
