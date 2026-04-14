@@ -7,6 +7,10 @@ import type { ChatMode, SendPromptPayload } from '@/types'
 const connection = useConnectionStore()
 const chatStore = useChatStore()
 
+const emit = defineEmits<{
+  'load-history': []
+}>();
+
 const prompt = ref('')
 const mode = ref<ChatMode>(connection.defaultMode)
 const model = ref('')
@@ -93,7 +97,17 @@ function clear() {
 
     <!-- Footer -->
     <div class="mt-2 flex items-center justify-between">
-      <span class="text-[10px] text-gray-500">{{ charCount }}</span>
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] text-gray-500">{{ charCount }}</span>
+        <button
+          type="button"
+          class="rounded-md px-2 py-1 text-[10px] text-gray-500 transition-colors hover:bg-surface-hover hover:text-gray-300 disabled:opacity-40"
+          :disabled="chatStore.isSending || chatStore.isLoadingHistory"
+          @click="emit('load-history')"
+        >
+          {{ chatStore.isLoadingHistory ? 'Loading…' : '↻ Reload history' }}
+        </button>
+      </div>
       <div class="flex gap-2">
         <button
           type="button"

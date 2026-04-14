@@ -1,9 +1,17 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useChatStore } from '@/stores/chatStore'
 import MessageList from './MessageList.vue'
 import ChatComposer from './ChatComposer.vue'
 
 const chatStore = useChatStore()
+const messageList = ref<InstanceType<typeof MessageList> | null>(null)
+
+async function loadHistoryAndScroll() {
+  await chatStore.loadHistory()
+  // Wait a tick for the DOM to update, then scroll
+  setTimeout(() => messageList.value?.scrollToBottom(), 50)
+}
 </script>
 
 <template>
@@ -48,9 +56,9 @@ const chatStore = useChatStore()
     </div>
 
     <!-- Messages -->
-    <MessageList />
+    <MessageList ref="messageList" />
 
     <!-- Composer -->
-    <ChatComposer />
+    <ChatComposer @load-history="loadHistoryAndScroll" />
   </div>
 </template>
