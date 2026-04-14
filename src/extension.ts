@@ -535,15 +535,18 @@ async function startWebUiServer(context: vscode.ExtensionContext, output: vscode
     });
   });
 
-  const urls = getServerUrls(port, token);
   const state: WebUiState = {
     server,
     host,
     port,
     token,
-    localUrl: urls.localUrl,
-    externalUrl: urls.externalUrl
+    localUrl: '',
+    externalUrl: undefined
   };
+
+  const urls = getWebUiUrls(state);
+  state.localUrl = urls.localUrl;
+  state.externalUrl = urls.externalUrl;
 
   output.appendLine(`Web UI listening on ${host}:${port}`);
   output.appendLine(`Local URL: ${state.localUrl}`);
