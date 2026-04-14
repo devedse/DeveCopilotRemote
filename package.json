@@ -3,7 +3,7 @@
   "displayName": "DeveCopilotRemote",
   "description": "VS Code extension that lets you drive the native Copilot chat panel from a mobile device.",
   "version": "0.0.1",
-  "publisher": "local",
+  "publisher": "DevedseDevOps",
   "repository": {
     "type": "git",
     "url": "https://github.com/devedse/DeveCopilotRemote.git"
