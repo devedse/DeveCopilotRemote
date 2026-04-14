@@ -83,7 +83,7 @@ export const useChatStore = defineStore('chat', () => {
       assistant.status = 'error'
       assistant.error = err instanceof Error ? err.message : String(err)
       if (!assistant.content) {
-        assistant.content = 'Connection lost — the response may have completed in VS Code.'
+        assistant.content = 'Connection lost, the response may have completed in VS Code.'
       }
     } finally {
       isSending.value = false

@@ -859,7 +859,7 @@ function parseChatHistory(text: string): Array<{ role: 'user' | 'assistant'; con
       continue;
     }
 
-    // "User: ..." starts a user message — but ONLY when not already in a user message
+    // "User: ..." starts a user message, but ONLY when not already in a user message
     // (otherwise "User:" in content would incorrectly split the message)
     if (/^User:\s*/i.test(trimmed) && currentRole !== 'user') {
       pushCurrent();
@@ -1131,7 +1131,7 @@ async function handleGitDiffRequest(url: URL, res: http.ServerResponse): Promise
     const repoRoot = info?.repoRoot ?? workspaceRoot;
     const repoRelPath = info?.repoRelPath ?? filePath.replace(/\\/g, '/');
 
-    // Try git diff CLI first — produces correct unified diff output
+    // Try git diff CLI first, produces correct unified diff output
     let diff = await gitDiffCli(repoRoot, repoRelPath);
 
     if (!diff) {
@@ -1150,7 +1150,7 @@ async function gitDiffCli(repoRoot: string, repoRelPath: string): Promise<string
   const tryCommands: string[][] = [
     // Working tree vs HEAD (covers staged + unstaged)
     ['diff', 'HEAD', '--', repoRelPath],
-    // Staged (cached) changes only — catches newly added files
+    // Staged (cached) changes only, catches newly added files
     ['diff', '--cached', '--', repoRelPath],
   ];
 
@@ -1164,7 +1164,7 @@ async function gitDiffCli(repoRoot: string, repoRelPath: string): Promise<string
         return stdout;
       }
     } catch {
-      // Command failed — try next variant
+      // Command failed, try next variant
     }
   }
   return '';
@@ -1393,7 +1393,7 @@ async function handleStreamingChatRequest(
       writeStreamEvent(res, {
         type: 'confirmation',
         toolId: confirmation.toolId,
-        message: `Copilot wants to use "${confirmation.toolId}" — please confirm on the desktop VS Code.`
+        message: `Copilot wants to use "${confirmation.toolId}", please confirm on the desktop VS Code.`
       });
 
       writeStreamEvent(res, {

@@ -12,7 +12,7 @@ let savedScrollTop = 0
 // Preserve scroll position when the container resizes due to viewer opening
 watch(() => filesStore.viewerFile, async (newVal, oldVal) => {
   if (newVal && !oldVal) {
-    // Viewer opening — save scroll position before resize
+    // Viewer opening, save scroll position before resize
     savedScrollTop = fileListContainer.value?.scrollTop ?? 0
     await nextTick()
     if (fileListContainer.value) {
