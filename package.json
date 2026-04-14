@@ -97,13 +97,14 @@
     }
   },
   "scripts": {
-    "compile": "cd webui && npm install && npm run build && cd .. && tsc -p ./",
-    "compile:ext": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "compile": "cd webui && npm install && npm run build && cd .. && node esbuild.js",
+    "compile:ext": "node esbuild.js",
+    "watch": "node esbuild.js --watch"
   },
   "devDependencies": {
     "@types/node": "^20.16.11",
     "@types/vscode": "^1.100.0",
+    "esbuild": "^0.28.0",
     "typescript": "^5.8.2"
   },
   "dependencies": {
