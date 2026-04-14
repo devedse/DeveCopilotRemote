@@ -74,3 +74,19 @@ jobs:
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish_marketplace:
+    needs: [generate_version_number, release_github]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    environment: marketplace
+    steps:
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: DeveCopilotRemote-1.0.${{needs.generate_version_number.outputs.build_number}}.vsix
+          path: ./artifacts
+      - name: Publish to VS Code Marketplace
+        run: npx @vscode/vsce publish --packagePath ./artifacts/DeveCopilotRemote-1.0.${{needs.generate_version_number.outputs.build_number}}.vsix
+        env:
+          VSCE_PAT: ${{ secrets.DEVEDSEAZUREDEVOPSTOKEN }}
