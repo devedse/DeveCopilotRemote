@@ -82,6 +82,7 @@ onUnmounted(() => {
   <LoginScreen
     v-else-if="!connection.authenticated"
     :auth-mode="connection.authMode"
+    :error="authError"
     @authenticate="handleAuthenticate"
   />
 

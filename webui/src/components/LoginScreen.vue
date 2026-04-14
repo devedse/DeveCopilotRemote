@@ -5,6 +5,7 @@ import type { AuthMode } from '@/types'
 
 const props = defineProps<{
   authMode: AuthMode
+  error?: string
 }>()
 
 const emit = defineEmits<{
@@ -12,7 +13,6 @@ const emit = defineEmits<{
 }>()
 
 const input = ref('')
-const error = ref('')
 const loading = ref(false)
 
 const isHttp = computed(() => window.location.protocol === 'http:')
@@ -22,13 +22,12 @@ async function submit() {
   if (!value) return
 
   loading.value = true
-  error.value = ''
 
   try {
     let credential: string
 
     if (props.authMode === 'password') {
-      credential = await hashPassword(value)
+      credential = hashPassword(value)
 
       // Put hash in URL so the link can be bookmarked
       const url = new URL(window.location.href)
@@ -80,7 +79,7 @@ async function submit() {
         </button>
       </form>
 
-      <p v-if="error" class="mt-3 text-center text-sm text-danger">{{ error }}</p>
+      <p v-if="props.error" class="mt-3 text-center text-sm text-danger">{{ props.error }}</p>
 
       <p v-if="isHttp" class="mt-4 text-center text-xs text-yellow-400">
         &#9888; You are connecting over HTTP. Your credentials are not encrypted in transit.
