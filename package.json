@@ -37,6 +37,10 @@
       {
         "command": "deveCopilotRemote.switchAuthMode",
         "title": "DeveCopilotRemote: Switch Authentication Mode"
+      },
+      {
+        "command": "deveCopilotRemote.changePassword",
+        "title": "DeveCopilotRemote: Change Password"
       }
     ],
     "configuration": {

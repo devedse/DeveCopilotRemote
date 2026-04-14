@@ -83,6 +83,15 @@ function clear() {
         />
         <span>Attach active file</span>
       </label>
+
+      <button
+        type="button"
+        class="ml-auto rounded-md px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-surface-hover hover:text-gray-200 disabled:opacity-40"
+        :disabled="chatStore.isSending || chatStore.isLoadingHistory"
+        @click="emit('load-history')"
+      >
+        {{ chatStore.isLoadingHistory ? 'Loading\u2026' : '\u21bb Reload history' }}
+      </button>
     </div>
 
     <!-- Input -->
@@ -97,17 +106,7 @@ function clear() {
 
     <!-- Footer -->
     <div class="mt-2 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <span class="text-[10px] text-gray-500">{{ charCount }}</span>
-        <button
-          type="button"
-          class="rounded-md px-2 py-1 text-[10px] text-gray-500 transition-colors hover:bg-surface-hover hover:text-gray-300 disabled:opacity-40"
-          :disabled="chatStore.isSending || chatStore.isLoadingHistory"
-          @click="emit('load-history')"
-        >
-          {{ chatStore.isLoadingHistory ? 'Loading…' : '↻ Reload history' }}
-        </button>
-      </div>
+      <span class="text-[10px] text-gray-500">{{ charCount }}</span>
       <div class="flex gap-2">
         <button
           type="button"

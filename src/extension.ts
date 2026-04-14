@@ -65,6 +65,7 @@ const SUMMARIZE_ACTIVE_FILE_COMMAND = 'deveCopilotRemote.summarizeActiveFile';
 const OPEN_WEB_UI_COMMAND = 'deveCopilotRemote.openWebUi';
 const COPY_WEB_UI_URL_COMMAND = 'deveCopilotRemote.copyWebUiUrl';
 const SWITCH_AUTH_MODE_COMMAND = 'deveCopilotRemote.switchAuthMode';
+const CHANGE_PASSWORD_COMMAND = 'deveCopilotRemote.changePassword';
 
 let webUiState: WebUiState | undefined;
 let webUiStartup: Promise<WebUiState> | undefined;
@@ -276,12 +277,23 @@ export function activate(context: vscode.ExtensionContext): void {
       const configuration = vscode.workspace.getConfiguration('deveCopilotRemote');
       const current = configuration.get<string>('webUi.authMode', 'token');
 
-      const pick = await vscode.window.showQuickPick([
+      const options: vscode.QuickPickItem[] = [
         { label: 'Token', description: 'Generate a new random token each session (default)', detail: current === 'token' ? '$(check) Currently active' : undefined },
-        { label: 'Password', description: 'Use a static password that persists across sessions', detail: current === 'password' ? '$(check) Currently active' : undefined }
-      ], { title: 'DeveCopilotRemote: Authentication Mode' });
+        { label: 'Password', description: 'Use a static password that persists across sessions', detail: current === 'password' ? '$(check) Currently active' : undefined },
+      ];
+
+      if (current === 'password') {
+        options.push({ label: 'Change password', description: 'Set a new static password' });
+      }
+
+      const pick = await vscode.window.showQuickPick(options, { title: 'DeveCopilotRemote: Authentication Mode' });
 
       if (!pick) {
+        return;
+      }
+
+      if (pick.label === 'Change password') {
+        await vscode.commands.executeCommand(CHANGE_PASSWORD_COMMAND);
         return;
       }
 
@@ -320,6 +332,25 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         output.show(true);
       }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(CHANGE_PASSWORD_COMMAND, async () => {
+      const configuration = vscode.workspace.getConfiguration('deveCopilotRemote');
+      const newPassword = await vscode.window.showInputBox({
+        prompt: 'Enter a new password for the web UI',
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: (v) => v.trim().length < 4 ? 'Password must be at least 4 characters' : undefined
+      });
+
+      if (!newPassword) {
+        return;
+      }
+
+      await configuration.update('webUi.password', newPassword, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage('DeveCopilotRemote: Password updated successfully.');
     })
   );
 
