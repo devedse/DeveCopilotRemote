@@ -1,5 +1,5 @@
 import { execFile } from 'child_process';
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import * as http from 'http';
 import { networkInterfaces } from 'os';
 import * as path from 'path';
@@ -64,6 +64,7 @@ const SEND_PROMPT_COMMAND = 'deveCopilotRemote.sendPromptToChat';
 const SUMMARIZE_ACTIVE_FILE_COMMAND = 'deveCopilotRemote.summarizeActiveFile';
 const OPEN_WEB_UI_COMMAND = 'deveCopilotRemote.openWebUi';
 const COPY_WEB_UI_URL_COMMAND = 'deveCopilotRemote.copyWebUiUrl';
+const SWITCH_AUTH_MODE_COMMAND = 'deveCopilotRemote.switchAuthMode';
 
 let webUiState: WebUiState | undefined;
 let webUiStartup: Promise<WebUiState> | undefined;
@@ -236,17 +237,77 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_WEB_UI_COMMAND, async () => {
       const state = await ensureWebUiServerStarted(context, output);
-      await vscode.env.openExternal(vscode.Uri.parse(state.localUrl));
+      const urls = getWebUiUrls(state);
+      await vscode.env.openExternal(vscode.Uri.parse(urls.localUrl));
       vscode.window.showInformationMessage('DeveCopilotRemote web UI opened in your browser.');
+      warnIfHttp(urls.localUrl);
     })
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand(COPY_WEB_UI_URL_COMMAND, async () => {
       const state = await ensureWebUiServerStarted(context, output);
-      const bestUrl = state.externalUrl ?? state.localUrl;
+      const urls = getWebUiUrls(state);
+      const bestUrl = urls.externalUrl ?? urls.localUrl;
       await vscode.env.clipboard.writeText(bestUrl);
       vscode.window.showInformationMessage(`Copied DeveCopilotRemote URL: ${bestUrl}`);
+      warnIfHttp(bestUrl);
+    })
+  );
+
+  // ── Auth mode status bar & command ──
+  const authModeItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  updateAuthModeStatusBar(authModeItem);
+  authModeItem.command = SWITCH_AUTH_MODE_COMMAND;
+  authModeItem.show();
+  context.subscriptions.push(authModeItem);
+
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('deveCopilotRemote.webUi.authMode') ||
+          e.affectsConfiguration('deveCopilotRemote.webUi.password')) {
+        updateAuthModeStatusBar(authModeItem);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(SWITCH_AUTH_MODE_COMMAND, async () => {
+      const configuration = vscode.workspace.getConfiguration('deveCopilotRemote');
+      const current = configuration.get<string>('webUi.authMode', 'token');
+
+      const pick = await vscode.window.showQuickPick([
+        { label: 'Token', description: 'Generate a new random token each session (default)', detail: current === 'token' ? '$(check) Currently active' : undefined },
+        { label: 'Password', description: 'Use a static password that persists across sessions', detail: current === 'password' ? '$(check) Currently active' : undefined }
+      ], { title: 'DeveCopilotRemote: Authentication Mode' });
+
+      if (!pick) {
+        return;
+      }
+
+      const newMode = pick.label.toLowerCase();
+      await configuration.update('webUi.authMode', newMode, vscode.ConfigurationTarget.Global);
+
+      if (newMode === 'password') {
+        const existingPassword = configuration.get<string>('webUi.password', '');
+        if (!existingPassword) {
+          const newPassword = await vscode.window.showInputBox({
+            prompt: 'Set a password for the web UI',
+            password: true,
+            ignoreFocusOut: true,
+            validateInput: (v) => v.trim().length < 4 ? 'Password must be at least 4 characters' : undefined
+          });
+          if (newPassword) {
+            await configuration.update('webUi.password', newPassword, vscode.ConfigurationTarget.Global);
+          } else {
+            // Cancelled — revert to token mode
+            await configuration.update('webUi.authMode', 'token', vscode.ConfigurationTarget.Global);
+          }
+        }
+      }
+
+      updateAuthModeStatusBar(authModeItem);
+      vscode.window.showInformationMessage(`DeveCopilotRemote auth mode set to: ${configuration.get<string>('webUi.authMode', 'token')}`);
     })
   );
 
@@ -263,6 +324,54 @@ export function activate(context: vscode.ExtensionContext): void {
 
   if (autoStartWebUi) {
     void ensureWebUiServerStarted(context, output);
+  }
+}
+
+function getWebUiUrls(state: WebUiState): { localUrl: string; externalUrl?: string } {
+  const configuration = vscode.workspace.getConfiguration('deveCopilotRemote');
+  const authMode = configuration.get<string>('webUi.authMode', 'token');
+
+  if (authMode === 'password') {
+    const localUrl = `http://localhost:${state.port}/`;
+    const nets = networkInterfaces();
+    let externalUrl: string | undefined;
+
+    for (const addresses of Object.values(nets)) {
+      const networkAddresses = (addresses ?? []) as Array<{
+        address: string;
+        family: string | number;
+        internal: boolean;
+      }>;
+      for (const address of networkAddresses) {
+        const isIpv4 = typeof address.family === 'string' ? address.family === 'IPv4' : address.family === 4;
+        if (isIpv4 && !address.internal) {
+          externalUrl = `http://${address.address}:${state.port}/`;
+          break;
+        }
+      }
+      if (externalUrl) {
+        break;
+      }
+    }
+
+    return { localUrl, externalUrl };
+  }
+
+  return getServerUrls(state.port, state.token);
+}
+
+function updateAuthModeStatusBar(item: vscode.StatusBarItem): void {
+  const configuration = vscode.workspace.getConfiguration('deveCopilotRemote');
+  const authMode = configuration.get<string>('webUi.authMode', 'token');
+  item.text = `$(key) Auth: ${authMode}`;
+  item.tooltip = `DeveCopilotRemote authentication mode: ${authMode}. Click to change.`;
+}
+
+function warnIfHttp(url: string): void {
+  if (url.startsWith('http://')) {
+    vscode.window.showWarningMessage(
+      'DeveCopilotRemote: The web UI is served over HTTP. Credentials are not encrypted in transit. Use a VPN or SSH tunnel for secure access over untrusted networks.'
+    );
   }
 }
 
@@ -447,11 +556,13 @@ async function handleHttpRequest(
   if (method === 'GET' && url.pathname === '/api/status') {
     const configuration = vscode.workspace.getConfiguration('deveCopilotRemote');
     const defaultMode = configuration.get<RequestedChatMode>('defaultMode', 'current');
+    const authMode = configuration.get<string>('webUi.authMode', 'token');
 
     writeJson(res, 200, {
       ok: true,
       appName: 'DeveCopilotRemote',
       defaultMode,
+      authMode,
       modeOptions: ['current', 'ask', 'edit', 'agent'],
       features: {
         chat: true,
@@ -639,10 +750,24 @@ async function handleHttpRequest(
 }
 
 function isAuthorized(req: http.IncomingMessage, url: URL, token: string): boolean {
-  const headerToken = req.headers['x-devecopilotremote-token'];
-  const queryToken = url.searchParams.get('token');
+  const configuration = vscode.workspace.getConfiguration('deveCopilotRemote');
+  const authMode = configuration.get<string>('webUi.authMode', 'token');
 
-  return headerToken === token || queryToken === token;
+  const headerValue = req.headers['x-devecopilotremote-token'] as string | undefined;
+
+  if (authMode === 'password') {
+    const password = configuration.get<string>('webUi.password', '');
+    if (!password) {
+      return false;
+    }
+    const expectedHash = createHash('sha256').update(password).digest('hex');
+    const queryValue = url.searchParams.get('passwordHash') ?? url.searchParams.get('token');
+    return headerValue === expectedHash || queryValue === expectedHash;
+  }
+
+  // Token mode
+  const queryToken = url.searchParams.get('token');
+  return headerValue === token || queryToken === token;
 }
 
 async function serveStaticFile(res: http.ServerResponse, filePath: string): Promise<void> {

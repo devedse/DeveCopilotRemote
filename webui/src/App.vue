@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useConnectionStore } from '@/stores/connectionStore'
+import { getToken, setCredential } from '@/composables/useApi'
+import LoginScreen from '@/components/LoginScreen.vue'
 import TopBar from '@/components/TopBar.vue'
 import TabNav from '@/components/TabNav.vue'
 import Toast from '@/components/Toast.vue'
@@ -10,6 +12,9 @@ import FilesPanel from '@/components/files/FilesPanel.vue'
 import type { Tab } from '@/components/TabNav.vue'
 
 const connection = useConnectionStore()
+
+const ready = ref(false)
+const authError = ref('')
 
 const tabs: Tab[] = [
   { id: 'chat', label: 'Chat', icon: '✦' },
@@ -34,15 +39,34 @@ function showToast(message: string, type: 'success' | 'error' = 'success') {
 
 // Re-check connection when the page becomes visible again (e.g. phone wakes)
 function onVisibilityChange() {
-  if (document.visibilityState === 'visible') {
-    connection.initialize()
+  if (document.visibilityState === 'visible' && connection.authenticated) {
+    connection.verifyAndConnect()
+  }
+}
+
+async function handleAuthenticate(credential: string) {
+  setCredential(credential)
+  const ok = await connection.verifyAndConnect()
+  if (!ok) {
+    authError.value = 'Authentication failed. Please check your credentials.'
+  } else {
+    authError.value = ''
   }
 }
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', onVisibilityChange)
-  await connection.initialize()
-  await connection.loadModels()
+
+  // Fetch public status (auth mode)
+  await connection.fetchAuthInfo()
+
+  // If we have a credential, verify it
+  const credential = getToken()
+  if (credential) {
+    await connection.verifyAndConnect()
+  }
+
+  ready.value = true
 })
 
 onUnmounted(() => {
@@ -51,7 +75,17 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-2 p-2">
+  <div v-if="!ready" class="flex min-h-dvh items-center justify-center">
+    <p class="text-sm text-gray-400">Loading...</p>
+  </div>
+
+  <LoginScreen
+    v-else-if="!connection.authenticated"
+    :auth-mode="connection.authMode"
+    @authenticate="handleAuthenticate"
+  />
+
+  <div v-else class="mx-auto flex min-h-dvh w-full max-w-6xl flex-col gap-2 p-2">
     <TopBar />
 
     <div class="flex flex-1 flex-col gap-2 sm:flex-row">

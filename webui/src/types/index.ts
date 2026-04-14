@@ -93,10 +93,13 @@ export interface FileContentResponse {
 
 // ── Status ──
 
+export type AuthMode = 'token' | 'password'
+
 export interface StatusResponse {
   ok: boolean
   appName: string
   defaultMode: ChatMode
+  authMode: AuthMode
   modeOptions: ChatMode[]
   features: {
     chat: boolean

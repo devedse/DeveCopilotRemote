@@ -32,6 +32,10 @@
       {
         "command": "deveCopilotRemote.copyWebUiUrl",
         "title": "DeveCopilotRemote: Copy Web UI URL"
+      },
+      {
+        "command": "deveCopilotRemote.switchAuthMode",
+        "title": "DeveCopilotRemote: Switch Authentication Mode"
       }
     ],
     "configuration": {
@@ -69,6 +73,20 @@
           "minimum": 1,
           "maximum": 65535,
           "description": "Port used by the mobile web UI server."
+        },
+        "deveCopilotRemote.webUi.authMode": {
+          "type": "string",
+          "enum": [
+            "token",
+            "password"
+          ],
+          "default": "token",
+          "description": "Authentication mode. 'token' generates a new random token each session. 'password' uses a static password that persists across sessions."
+        },
+        "deveCopilotRemote.webUi.password": {
+          "type": "string",
+          "default": "",
+          "description": "Static password for the web UI (used when authMode is 'password'). The password is hashed before transmission."
         }
       }
     }
