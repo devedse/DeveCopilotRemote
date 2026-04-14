@@ -1,11 +1,14 @@
 import { execFile } from 'child_process';
 import { createHash, randomBytes } from 'crypto';
 import * as http from 'http';
+import * as https from 'https';
 import * as os from 'os';
 import { networkInterfaces } from 'os';
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { promisify } from 'util';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const selfsigned = require('selfsigned') as typeof import('selfsigned');
 import * as vscode from 'vscode';
 
 const execFileAsync = promisify(execFile);
@@ -23,7 +26,7 @@ type ChatOpenOptions = {
 };
 
 type WebUiState = {
-  server: http.Server;
+  server: https.Server;
   host: string;
   port: number;
   token: string;
@@ -376,7 +379,7 @@ function getWebUiUrls(state: WebUiState): { localUrl: string; externalUrl?: stri
   const authMode = configuration.get<string>('webUi.authMode', 'token');
 
   if (authMode === 'password') {
-    const localUrl = `http://localhost:${state.port}/`;
+    const localUrl = `https://localhost:${state.port}/`;
     const nets = networkInterfaces();
     let externalUrl: string | undefined;
 
@@ -389,7 +392,7 @@ function getWebUiUrls(state: WebUiState): { localUrl: string; externalUrl?: stri
       for (const address of networkAddresses) {
         const isIpv4 = typeof address.family === 'string' ? address.family === 'IPv4' : address.family === 4;
         if (isIpv4 && !address.internal) {
-          externalUrl = `http://${address.address}:${state.port}/`;
+          externalUrl = `https://${address.address}:${state.port}/`;
           break;
         }
       }
@@ -411,12 +414,8 @@ function updateAuthModeStatusBar(item: vscode.StatusBarItem): void {
   item.tooltip = `DeveCopilotRemote authentication mode: ${authMode}. Click to change.`;
 }
 
-function warnIfHttp(url: string): void {
-  if (url.startsWith('http://')) {
-    vscode.window.showWarningMessage(
-      'DeveCopilotRemote: The web UI is served over HTTP. Credentials are not encrypted in transit. Use a VPN or SSH tunnel for secure access over untrusted networks.'
-    );
-  }
+function warnIfHttp(_url: string): void {
+  // Server now uses HTTPS — no HTTP warning needed.
 }
 
 export function deactivate(): void {
@@ -542,6 +541,44 @@ async function ensureWebUiServerStarted(context: vscode.ExtensionContext, output
   }
 }
 
+/** Load a persisted self-signed TLS cert from storage, or generate and persist a new one. */
+async function generateOrLoadCert(
+  storageUri: vscode.Uri,
+  output: vscode.OutputChannel
+): Promise<{ key: string; cert: string }> {
+  const keyPath = path.join(storageUri.fsPath, 'tls.key');
+  const certPath = path.join(storageUri.fsPath, 'tls.cert');
+
+  try {
+    const [key, cert] = await Promise.all([
+      fs.readFile(keyPath, 'utf8'),
+      fs.readFile(certPath, 'utf8'),
+    ]);
+    output.appendLine('TLS: loaded existing self-signed certificate');
+    return { key, cert };
+  } catch {
+    // Not found or unreadable — generate a new one
+  }
+
+  output.appendLine('TLS: generating new self-signed certificate (valid 10 years)');
+  const attrs = [{ name: 'commonName', value: 'DeveCopilotRemote' }];
+  const tenYearsFromNow = new Date();
+  tenYearsFromNow.setFullYear(tenYearsFromNow.getFullYear() + 10);
+  const pems = await selfsigned.generate(attrs, {
+    algorithm: 'sha256',
+    keySize: 2048,
+    notAfterDate: tenYearsFromNow,
+  });
+
+  await fs.mkdir(storageUri.fsPath, { recursive: true });
+  await Promise.all([
+    fs.writeFile(keyPath, pems.private, { mode: 0o600 }),
+    fs.writeFile(certPath, pems.cert, { mode: 0o644 }),
+  ]);
+
+  return { key: pems.private, cert: pems.cert };
+}
+
 async function startWebUiServer(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<WebUiState> {
   const configuration = vscode.workspace.getConfiguration('deveCopilotRemote');
   const host = configuration.get<string>('webUi.host', '0.0.0.0');
@@ -549,7 +586,9 @@ async function startWebUiServer(context: vscode.ExtensionContext, output: vscode
   const token = randomBytes(16).toString('hex');
   const mediaRoot = vscode.Uri.joinPath(context.extensionUri, 'media', 'web').fsPath;
 
-  const server = http.createServer(async (req, res) => {
+  const tls = await generateOrLoadCert(context.globalStorageUri, output);
+
+  const server = https.createServer({ key: tls.key, cert: tls.cert }, async (req, res) => {
     try {
       await handleHttpRequest(req, res, mediaRoot, output, token);
     } catch (error) {
@@ -886,7 +925,7 @@ async function readJsonBody<T>(req: http.IncomingMessage): Promise<T> {
 }
 
 function getServerUrls(port: number, token: string): { localUrl: string; externalUrl?: string } {
-  const localUrl = `http://localhost:${port}/?token=${token}`;
+  const localUrl = `https://localhost:${port}/?token=${token}`;
   const nets = networkInterfaces();
   const candidates: string[] = [];
 
@@ -899,7 +938,7 @@ function getServerUrls(port: number, token: string): { localUrl: string; externa
     for (const address of networkAddresses) {
       const isIpv4 = typeof address.family === 'string' ? address.family === 'IPv4' : address.family === 4;
       if (isIpv4 && !address.internal) {
-        candidates.push(`http://${address.address}:${port}/?token=${token}`);
+        candidates.push(`https://${address.address}:${port}/?token=${token}`);
       }
     }
   }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { hashPassword } from '@/composables/useApi'
 import type { AuthMode } from '@/types'
 
@@ -14,8 +14,6 @@ const emit = defineEmits<{
 
 const input = ref('')
 const loading = ref(false)
-
-const isHttp = computed(() => window.location.protocol === 'http:')
 
 async function submit() {
   const value = input.value.trim()
@@ -80,11 +78,6 @@ async function submit() {
       </form>
 
       <p v-if="props.error" class="mt-3 text-center text-sm text-danger">{{ props.error }}</p>
-
-      <p v-if="isHttp" class="mt-4 text-center text-xs text-yellow-400">
-        &#9888; You are connecting over HTTP. Your credentials are not encrypted in transit.
-        Use HTTPS or a VPN for secure access.
-      </p>
     </div>
   </div>
 </template>
