@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { createHash, randomBytes } from 'crypto';
 import * as http from 'http';
+import * as os from 'os';
 import { networkInterfaces } from 'os';
 import * as path from 'path';
 import { promises as fs } from 'fs';
@@ -943,39 +944,312 @@ function safeStringify(value: unknown): string {
 
 async function handleChatHistoryRequest(res: http.ServerResponse, output: vscode.OutputChannel): Promise<void> {
   try {
-    // 1. Save current clipboard
-    const savedClipboard = await vscode.env.clipboard.readText();
-
-    // 2. Clear clipboard so we can detect when copyAll writes to it
-    await vscode.env.clipboard.writeText('');
-
-    // 3. Execute the copy-all command
-    await vscode.commands.executeCommand(COPY_ALL_CHAT_COMMAND);
-
-    // 4. Small delay to allow clipboard to be written
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    // 5. Read the chat content
-    const chatText = await vscode.env.clipboard.readText();
-
-    // 6. Restore original clipboard
-    await vscode.env.clipboard.writeText(savedClipboard);
-
-    if (!chatText || chatText.trim().length === 0) {
-      writeJson(res, 200, { ok: true, messages: [], note: 'No chat history found (chat panel may be empty or closed).' });
+    // Primary: read directly from VS Code session files on disk
+    const messages = await readChatHistoryFromSessionFiles(output);
+    if (messages.length > 0) {
+      output.appendLine(`Chat history: read ${messages.length} messages from session file`);
+      writeJson(res, 200, { ok: true, messages });
       return;
     }
 
-    // 7. Parse into structured messages
-    const messages = parseChatHistory(chatText);
-    output.appendLine(`Chat history: parsed ${messages.length} messages from ${chatText.length} chars of clipboard text`);
-
-    writeJson(res, 200, { ok: true, messages });
+    // Fallback: clipboard hack
+    output.appendLine('Chat history: no session file found, falling back to clipboard');
+    const clipboardMessages = await readChatHistoryFromClipboard(output);
+    if (clipboardMessages === null) {
+      writeJson(res, 200, { ok: true, messages: [], note: 'No chat history found.' });
+      return;
+    }
+    writeJson(res, 200, { ok: true, messages: clipboardMessages });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     output.appendLine(`Chat history error: ${message}`);
     writeJson(res, 500, { ok: false, error: `Failed to read chat history: ${message}` });
   }
+}
+
+/**
+ * Read chat history by finding the current workspace's session file in VS Code's
+ * workspaceStorage directory. Returns [] if not found or unreadable.
+ */
+async function readChatHistoryFromSessionFiles(
+  output: vscode.OutputChannel
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  const workspaceFolders = vscode.workspace.workspaceFolders;
+  if (!workspaceFolders || workspaceFolders.length === 0) {
+    return [];
+  }
+
+  const currentWorkspacePath = workspaceFolders[0].uri.fsPath
+    .replace(/\\/g, '/')
+    .toLowerCase();
+
+  // Build candidate VS Code user data paths (stable, insiders, etc.)
+  const homedir = os.homedir();
+  const userDataDirs: string[] = [];
+
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(homedir, 'AppData', 'Roaming');
+    for (const variant of ['Code', 'Code - Insiders', 'VSCodium', 'Cursor']) {
+      userDataDirs.push(path.join(appData, variant, 'User'));
+    }
+  } else if (process.platform === 'darwin') {
+    for (const variant of ['Code', 'Code - Insiders', 'VSCodium', 'Cursor']) {
+      userDataDirs.push(path.join(homedir, 'Library', 'Application Support', variant, 'User'));
+    }
+  } else {
+    const xdgConfig = process.env.XDG_CONFIG_HOME || path.join(homedir, '.config');
+    for (const variant of ['Code', 'Code - Insiders', 'VSCodium', 'Cursor']) {
+      userDataDirs.push(path.join(xdgConfig, variant, 'User'));
+    }
+  }
+
+  for (const userDataDir of userDataDirs) {
+    const workspaceStoragePath = path.join(userDataDir, 'workspaceStorage');
+    try {
+      await fs.access(workspaceStoragePath);
+    } catch {
+      continue;
+    }
+
+    let hashDirs: string[];
+    try {
+      hashDirs = await fs.readdir(workspaceStoragePath);
+    } catch {
+      continue;
+    }
+
+    for (const hashDir of hashDirs) {
+      const hashDirPath = path.join(workspaceStoragePath, hashDir);
+
+      // Match workspace.json or meta.json to current workspace
+      let isCurrentWorkspace = false;
+      for (const metaFile of ['workspace.json', 'meta.json']) {
+        const metaPath = path.join(hashDirPath, metaFile);
+        try {
+          const raw = await fs.readFile(metaPath, 'utf8');
+          const obj = JSON.parse(raw) as Record<string, unknown>;
+          for (const key of ['folder', 'workspace']) {
+            const val = obj[key];
+            if (typeof val !== 'string') { continue; }
+            // Normalise the path from the meta file
+            let normVal = val.replace(/^file:\/\/\/?/i, '').replace(/\\/g, '/').toLowerCase();
+            // On Windows, URI decode encoded chars (e.g. %3A → :)
+            try { normVal = decodeURIComponent(normVal); } catch { /* ignore */ }
+            // Strip leading slash on Windows paths like /c:/users/...
+            if (/^\/[a-z]:/.test(normVal)) { normVal = normVal.slice(1); }
+            if (normVal === currentWorkspacePath || normVal.endsWith(currentWorkspacePath)) {
+              isCurrentWorkspace = true;
+              break;
+            }
+          }
+        } catch {
+          // Not readable or not a valid JSON — skip
+        }
+        if (isCurrentWorkspace) { break; }
+      }
+
+      if (!isCurrentWorkspace) { continue; }
+
+      // Found the right hash dir — look for chatSessions
+      const chatSessionsPath = path.join(hashDirPath, 'chatSessions');
+      try {
+        await fs.access(chatSessionsPath);
+      } catch {
+        continue;
+      }
+
+      let sessionFiles: string[];
+      try {
+        const entries = await fs.readdir(chatSessionsPath);
+        sessionFiles = entries
+          .filter(f => f.endsWith('.json') || f.endsWith('.jsonl'))
+          .map(f => path.join(chatSessionsPath, f));
+      } catch {
+        continue;
+      }
+
+      if (sessionFiles.length === 0) { continue; }
+
+      // Pick the most recently modified session file
+      const withStats = await Promise.all(
+        sessionFiles.map(async (f) => {
+          try {
+            const stat = await fs.stat(f);
+            return { f, mtime: stat.mtimeMs };
+          } catch {
+            return { f, mtime: 0 };
+          }
+        })
+      );
+      withStats.sort((a, b) => b.mtime - a.mtime);
+      const newestSession = withStats[0].f;
+
+      output.appendLine(`Chat history: reading session file ${newestSession}`);
+      try {
+        const content = await fs.readFile(newestSession, 'utf8');
+        const parsed = parseSessionFile(newestSession, content);
+        if (parsed.length > 0) {
+          return parsed;
+        }
+      } catch (err) {
+        output.appendLine(`Chat history: failed to read ${newestSession}: ${err}`);
+      }
+    }
+  }
+
+  return [];
+}
+
+type JsonNode = Record<string, unknown> | unknown[] | string | number | boolean | null;
+
+/** Apply a delta patch (VS Code Insiders JSONL format). */
+function applySessionDelta(state: JsonNode, delta: Record<string, unknown>): JsonNode {
+  const kind = delta.kind as number;
+  const k = delta.k as unknown[];
+  const v = delta.v as JsonNode;
+
+  if (kind === 0) { return v; }
+  if (!Array.isArray(k) || k.length === 0) { return state; }
+
+  const pathSegs = k.map(String);
+  const forbidden = ['__proto__', 'prototype', 'constructor'];
+  if (pathSegs.some(s => forbidden.includes(s))) { return state; }
+
+  // Deep-clone to avoid mutation across calls
+  let root: Record<string, unknown> = (state && typeof state === 'object' && !Array.isArray(state))
+    ? { ...(state as Record<string, unknown>) }
+    : {};
+
+  let current: Record<string, unknown> = root;
+  for (let i = 0; i < pathSegs.length - 1; i++) {
+    const seg = pathSegs[i];
+    const existing = current[seg];
+    const next: Record<string, unknown> = (existing && typeof existing === 'object' && !Array.isArray(existing))
+      ? { ...(existing as Record<string, unknown>) }
+      : {};
+    current[seg] = next;
+    current = next;
+  }
+
+  const last = pathSegs[pathSegs.length - 1];
+  if (kind === 1) {
+    current[last] = v;
+  } else if (kind === 2) {
+    const existing = current[last];
+    const arr = Array.isArray(existing) ? [...existing] : [];
+    if (Array.isArray(v)) { arr.push(...v); } else { arr.push(v); }
+    current[last] = arr;
+  }
+
+  return root;
+}
+
+/**
+ * Parse a VS Code Copilot session file (JSON or delta-JSONL) into chat turns.
+ */
+function parseSessionFile(
+  filePath: string,
+  content: string
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
+  const extractText = (response: unknown): string => {
+    if (!Array.isArray(response)) { return ''; }
+    return (response as unknown[])
+      .map((item) => {
+        if (!item || typeof item !== 'object') { return ''; }
+        const r = item as Record<string, unknown>;
+        if (r.kind === 'thinking') { return ''; }
+        const contentVal = (r.content as Record<string, unknown> | undefined)?.value;
+        if (typeof contentVal === 'string') { return contentVal; }
+        if (typeof r.value === 'string') { return r.value; }
+        return '';
+      })
+      .join('');
+  };
+
+  const processRequests = (requests: unknown[]): void => {
+    for (const req of requests) {
+      if (!req || typeof req !== 'object') { continue; }
+      const r = req as Record<string, unknown>;
+      const msg = r.message as Record<string, unknown> | undefined;
+      let userText = '';
+      if (typeof msg?.text === 'string') {
+        userText = msg.text.trim();
+      } else if (Array.isArray((msg as Record<string, unknown> | undefined)?.parts)) {
+        userText = ((msg as Record<string, unknown>).parts as unknown[])
+          .map(p => (typeof (p as Record<string, unknown>)?.text === 'string' ? (p as Record<string, unknown>).text : ''))
+          .join('').trim();
+      }
+      const assistantText = extractText(r.response as unknown[]).trim();
+
+      if (userText) { messages.push({ role: 'user', content: userText }); }
+      if (assistantText) { messages.push({ role: 'assistant', content: assistantText }); }
+    }
+  };
+
+  if (filePath.endsWith('.jsonl')) {
+    const lines = content.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length === 0) { return []; }
+
+    // Detect delta format
+    let isDelta = false;
+    try {
+      const first = JSON.parse(lines[0]) as Record<string, unknown>;
+      isDelta = typeof first.kind === 'number';
+    } catch { /* not delta */ }
+
+    if (isDelta) {
+      let state: JsonNode = null;
+      for (const line of lines) {
+        try {
+          const delta = JSON.parse(line) as Record<string, unknown>;
+          state = applySessionDelta(state, delta);
+        } catch { /* skip bad lines */ }
+      }
+      const requests = (state as Record<string, unknown> | null)?.requests;
+      if (Array.isArray(requests)) { processRequests(requests); }
+    } else {
+      // Non-delta JSONL — try parsing the whole file as JSON
+      try {
+        const obj = JSON.parse(content.trim()) as Record<string, unknown>;
+        const requests = Array.isArray(obj.requests) ? obj.requests : [];
+        processRequests(requests);
+      } catch { /* not parseable */ }
+    }
+  } else {
+    // Regular JSON file
+    try {
+      const obj = JSON.parse(content) as Record<string, unknown>;
+      const requests = Array.isArray(obj.requests) ? obj.requests
+        : Array.isArray(obj.history) ? obj.history
+        : [];
+      processRequests(requests);
+    } catch { /* not parseable */ }
+  }
+
+  return messages;
+}
+
+/**
+ * Fallback: read chat history via the clipboard copy-all trick.
+ * Returns null if nothing was found, or an array of messages.
+ */
+async function readChatHistoryFromClipboard(
+  output: vscode.OutputChannel
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }> | null> {
+  const savedClipboard = await vscode.env.clipboard.readText();
+  await vscode.env.clipboard.writeText('');
+  await vscode.commands.executeCommand(COPY_ALL_CHAT_COMMAND);
+  await new Promise(resolve => setTimeout(resolve, 200));
+  const chatText = await vscode.env.clipboard.readText();
+  await vscode.env.clipboard.writeText(savedClipboard);
+
+  if (!chatText || chatText.trim().length === 0) { return null; }
+
+  const messages = parseChatHistory(chatText);
+  output.appendLine(`Chat history (clipboard): parsed ${messages.length} messages from ${chatText.length} chars`);
+  return messages;
 }
 
 function parseChatHistory(text: string): Array<{ role: 'user' | 'assistant'; content: string }> {
